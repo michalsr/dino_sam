@@ -212,25 +212,26 @@ def main(args: argparse.Namespace) -> None:
 
     for t in targets:
         print(f"Processing '{t}'...")
-
-        image = cv2.imread(t)
-        if image is None:
-            print(f"Could not load '{t}' as an image, skipping...")
-            continue
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         base = os.path.basename(t)
         base = os.path.splitext(base)[0]
         save_base = os.path.join(args.output, base)
-        masks = generator.generate(image,image_name=base)
+        if not os.path.exists(save_base+'.json'):
+            image = cv2.imread(t)
+            if image is None:
+                print(f"Could not load '{t}' as an image, skipping...")
+                continue
+            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    
+            masks = generator.generate(image,image_name=base)
 
-      
-        if output_mode == "binary_mask":
-            os.makedirs(save_base, exist_ok=False)
-            write_masks_to_folder(masks, save_base)
-        else:
-            save_file = save_base + ".json"
-            with open(save_file, "w") as f:
-                json.dump(masks, f)
+        
+            if output_mode == "binary_mask":
+                os.makedirs(save_base, exist_ok=False)
+                write_masks_to_folder(masks, save_base)
+            else:
+                save_file = save_base + ".json"
+                with open(save_file, "w") as f:
+                    json.dump(masks, f)
     print("Done!")
 
 
