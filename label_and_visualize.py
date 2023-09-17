@@ -87,13 +87,12 @@ class LabelRegions(object):
             color_map = np.load(color_map_loc,allow_pickle=True)
             annotation_map = cv2.imread(os.path.join(self.annotation_location,annotation_map_loc))
             color_seg = np.zeros((first_map.shape[0], first_map.shape[1], 3), dtype=np.uint8)
-            for label, color in enumerate(ADE20K_COLORMAP):
+            for label, color in enumerate(color_map):
                 arr_1, arr_2, _ = np.where(first_map == label)
                 color_seg[arr_1,arr_2,:] = np.array(color)
             return color_seg 
-labels = LabelRegions(image_location='/shared/rsaas/dino_sam/data/ADE20K/images/training',annotation_location='/shared/rsaas/dino_sam/data/ADE20K/annotations/training',sam_location='/shared/rsaas/dino_sam/sam_output/ADE20K/training',label_directory='/data/michal5/dino_sam/labels/ADE20K/training')
+labels = LabelRegions(image_location='/shared/rsaas/dino_sam/data/ADE20K/images/validation',annotation_location='/shared/rsaas/dino_sam/data/ADE20K/annotations/validation',sam_location='/shared/rsaas/dino_sam/sam_output/ADE20K/validation',label_directory='/shared/rsaas/dino_sam/labels/ADE20K/validation')
 labels.load_all_sam_regions()
-os.makedirs(labels.label_directory,exist_ok=True)
 labels.label_all_regions_all_images()
 
             
