@@ -54,6 +54,7 @@ def evaluate_classifier(root_feature, root_label, save_root):
         loaded_model = pickle.load(open(filename, 'rb'))
 
         target_label = np.zeros_like(val_data['label'])
+        target_label.fill(-1)
         target_label[np.where(val_data['label'] == class_id)] = 1
 
         acc = loaded_model.score(val_data['feature'], target_label, sample_weight=val_data['weight'])
@@ -70,7 +71,9 @@ def train_classifier(root_feature, root_label, save_root):
 
     for class_id in np.unique(train_data['label']):
         target_label = np.zeros_like(train_data['label'])
+        target_label.fill(-1)
         target_label[np.where(train_data['label'] == class_id)] = 1
+        
         classifier = LogisticRegression(verbose=1, multi_class='ovr', max_iter=200).fit(train_data['feature'],
                                                                                         target_label,
                                                                                         sample_weight=train_data['weight'])
