@@ -7,8 +7,7 @@ import os
 import cv2
 import pickle 
 class LabelRegions(object):
-     def __init__(self,image_location,annotation_location,sam_location,label_directory,num_labels=150,device='cuda'):
-        self.image_location = image_location
+     def __init__(self,annotation_location,sam_location,label_directory,num_labels=150,device='cuda'):
         self.annotation_location = annotation_location
         self.sam_location = sam_location 
         self.label_directory = label_directory
@@ -54,20 +53,21 @@ class LabelRegions(object):
             final_label = {key:0 for key in list(range(1,self.num_labels+1))}      
         return final_label
      def save_region_labels(self,image_label_dict,file_name):
+        if not os.path.exists(self.label_directory):
+            os.makedirs(self.label_directory)
         with open(os.path.join(self.label_directory,file_name),'wb+') as f:
                 pickle.dump(image_label_dict,f)
 
 
 
      def label_all_regions_all_images(self):
-        all_images = os.listdir(self.image_location)
+        
         all_annotations = os.listdir(self.annotation_location)
-        for i,im in enumerate(tqdm(all_images,desc='Label Features',total=len(all_images))):
+        for i,ann in enumerate(tqdm(all_annotations,desc='Label Features',total=len(all_annotations))):
             region_to_label = []
-            image_name = im 
-            annotation_loc = all_annotations[i]
-            annotation_map = cv2.imread(os.path.join(self.annotation_location,im.replace('.jpg','.png')))
-            sam_regions = self.image_id_to_sam[im.replace('.jpg','')]
+
+            annotation_map = cv2.imread(os.path.join(self.annotation_location,ann))
+            sam_regions = self.image_id_to_sam[ann.replace('.png','')]
             for region in sam_regions:
                 sam_labels = {}
                 sam_labels['region_id'] = region['region_id']
@@ -75,7 +75,7 @@ class LabelRegions(object):
                 labels  = self.label_region(sam_mask,annotation_map)
                 sam_labels['labels'] = labels 
                 region_to_label.append(sam_labels)
-            self.save_region_labels(region_to_label,image_name.replace('.jpg','.pkl'))
+            self.save_region_labels(region_to_label,ann.replace('.png','.pkl'))
         def map_on_img(self,image_name,mask,color='blue',alpha=0.8):
             img = cv2.imread(os.path.join(self.image_location,name))
             img_to_draw = img.copy()
@@ -91,7 +91,7 @@ class LabelRegions(object):
                 arr_1, arr_2, _ = np.where(first_map == label)
                 color_seg[arr_1,arr_2,:] = np.array(color)
             return color_seg 
-labels = LabelRegions(image_location='/shared/rsaas/dino_sam/data/ADE20K/images/validation',annotation_location='/shared/rsaas/dino_sam/data/ADE20K/annotations/validation',sam_location='/shared/rsaas/dino_sam/sam_output/ADE20K/validation',label_directory='/shared/rsaas/dino_sam/labels/ADE20K/validation')
+labels = LabelRegions(annotation_location='/shared/rsaas/dino_sam/data/VOCdevkit/VOC2012/segmentation_annotation/val',sam_location='/home/michal5/dino_sam/sam_pascal_voc/val',label_directory='/shared/rsaas/dino_sam/labels/pascal_voc/val')
 labels.load_all_sam_regions()
 labels.label_all_regions_all_images()
 
