@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="WebServers">
+    <option name="servers">
+      <webServer id="e8d9ff6d-bca3-456d-8220-98184d481f40" name="ava_dino_sam">
+        <fileTransfer rootFolder="/home/ava/code/dino_sam" accessType="SFTP" host="130.126.138.231" port="22" sshConfigId="6da0af21-4be9-4ef2-8e51-a36d68eec88b" sshConfig="ava@130.126.138.231:22 password">
+          <advancedOptions>
+            <advancedOptions dataProtectionLevel="Private" passiveMode="true" shareSSLContext="true" />
+          </advancedOptions>
+        </fileTransfer>
+      </webServer>
+    </option>
+  </component>
+</project>
