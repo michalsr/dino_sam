@@ -99,11 +99,12 @@ if __name__ == '__main__':
     root_label = '/shared/rsaas/dino_sam/labels/ADE20K'
     save_root = '/shared/rsaas/dino_sam'
 
-    #load_features(root_feature, root_label,save_root)
+
     parser = argparse.ArgumentParser()
 
-    parser.add_argument('--max',default=-1)
-    parser.add_argument('--min',default=-1)
+    # get class ids for training 
+    parser.add_argument('--max_class_id',default=-1)
+    parser.add_argument('--min_class_id',default=-1)
     parser.add_argument('--include_0_class',action='store_true')
     args = parser.parse_args()
     training_file = os.path.join(save_root, 'training.pkl')
@@ -114,17 +115,20 @@ if __name__ == '__main__':
         val_data = load_features(root_feature, root_label,save_root, 'validation')
 
     
-    if args.max == -1 or args.min == -1:
+    if args.max_class_id == -1 or args.min_class_id == -1:
         class_ids = np.unique(train_data['labels'])
-        min_val = class_ids[0]
-        max_val = class_ids[-1]
+        min_class = class_ids[0]
+        max_class= class_ids[-1]
 
         if class_ids[0] == 0 and args.include_0_class == False:
             # we do not want to train the 0th class 
-            min_val  = class_ids[1]
+            min_class  = class_ids[1]
+    else:
+        min_class = args.min_class_id
+        max_class = args.max_class\ 
 
   
-    for i in range(int(min_val),int(max_val)+1):
+    for i in range(int(min_class),int(max_class)+1):
 
         train_classifier(root_feature, root_label, save_root,int(i))
         evaluate_classifier(root_feature, root_label, save_root,int(i))
