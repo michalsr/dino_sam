@@ -125,7 +125,7 @@ if __name__ == '__main__':
             min_class  = class_ids[1]
     else:
         min_class = args.min_class_id
-        max_class = args.max_class\ 
+        max_class = args.max_class_id
 
   
     for i in range(int(min_class),int(max_class)+1):
