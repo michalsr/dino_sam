@@ -3,7 +3,12 @@ import pickle
 import os
 import numpy as np
 from tqdm import tqdm
+<<<<<<< HEAD
 import argparse
+=======
+import argparse 
+import utils 
+>>>>>>> f42ebd5 (cleaned up files)
 import gc
 from sklearn.metrics import average_precision_score
 from sklearn.metrics import roc_auc_score
@@ -68,7 +73,7 @@ def evaluate_classifier(root_feature, root_label, save_root, class_id):
                                        sample_weight=val_data['weight'])
     print(f'ROC AUC SCORE = {roc_auc_score} for class {class_id}')
     print(f'Average Precision Score = {ap_score} for class {class_id}')
-    del loaded_model
+    return roc_auc, ap_score 
 
 
 def train_classifier(root_feature, root_label, save_root, class_id):
@@ -93,9 +98,9 @@ def train_classifier(root_feature, root_label, save_root, class_id):
     filename = f'{save_root}/model_{class_id}.sav'
     with open(filename, 'wb') as s:
         pickle.dump(classifier, s)
-    del classifier
 
 
+<<<<<<< HEAD
 if __name__ == '__main__':
     root_feature = '/shared/rsaas/dino_sam/pooled_features_pkl/pascal_voc'
     root_label = '/shared/rsaas/dino_sam/labels/pascal_voc'
@@ -136,3 +141,48 @@ if __name__ == '__main__':
     for i in tqdm(range(int(min_class), int(max_class) + 1)):
         train_classifier(root_feature, root_label, save_root, int(i))
         # evaluate_classifier(root_feature, root_label, save_root,int(i))
+=======
+
+
+def train_and_evaluate(args):
+    pooled_dir = os.path.join(args.pooled_dir,args.dataset_name)
+    label_dir = os.path.join(args.label_dir,args.dataset_name)
+    classifier_dir = os.path.join(args.classifier_dir,args.dataset_name)
+    result_dir = os.path.join(args.save_)
+    training_file = os.path.join(classifier_dir,'train.pkl')
+    val_file = os.path.join(classifier_dir,'val.pkl')
+
+    if not os.path.exists(training_file):
+        train_data = load_features(pooled_dir,label_dir,classifier_dir,'train')
+    else:
+        train_data = utils.open_pkl_file(trainig_file,'')
+    if not os.path.exists(val_file):
+        val_data = load_features(pooled_dir,label_dir,classifier_dir,'val')
+    else:
+        val_data = utils.open_pkl_file(val_file,'')
+    class_ids = np.unique(train_data['label'])
+    min_class = class_ids[0]
+    max_class = class_ids[-1]
+    if class_ids[0] and args.ignore_zero:
+        min_class = class_ids[1]
+    avg_ap = []
+    avg_roc_auc = []
+    for i in range(int(min_class),int(max_class)+1):
+        if not args.eval_only:
+            train_classifier(pooled_dir, label_dir, classifier_dir,int(i))
+        roc_auc, ap_score  = evaluate_classifier(pooled_dir, label_dir, classifier_dir,int(i))
+        avg_ap.append(ap_score)
+        avg_roc_auc.append(roc_auc)
+    if args.save_file != '':
+        result_save_dir = os.path.join(args.save_file,args.dataset_name)
+    else:
+        results_save_dir = os.path.join(args.classifier_dir,args.dataset_name)
+    save_json_file(results_save_dir,'avg_ap.json',avg_ap)
+    save_json_file(results_save_dir,'avg_roc_auc.json',avg_roc_auc)
+    print(f'Avg AP :{np.mean(avg_ap)}')
+    print(f'AVG ROC AUC:{np.mean(avg_roc_auc)}')
+
+    
+
+
+>>>>>>> f42ebd5 (cleaned up files)
