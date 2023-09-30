@@ -8,13 +8,16 @@ import scipy
 import cv2
 import pickle 
 import utils 
-
+import torch 
+import torchvision.transforms as T
+import argparse
+import torch.nn.functional as F
 
 def load_all_sam_regions(args):
-    print(f"Loading sam regions from {args.sam_location}")
+    print(f"Loading sam regions from {args.sam_dir}")
     image_id_to_sam = {}
-    for f in tqdm(os.listdir(args.sam_location)):
-        sam_regions = utils.open_json_file(args.sam_location,f)
+    for f in tqdm(os.listdir(args.sam_dir)):
+        sam_regions = utils.open_json_file(args.sam_dir,f)
         image_id_to_sam[f.replace('.json','')] = sam_regions
     return image_id_to_sam
 
@@ -52,8 +55,8 @@ def label_region(args,sam_region,annotation_map):
     return final_label
 
 def label_all_regions(args):
-    if len(args.sam_location) == 0:
-        raise Exception(f"No sam regions found at {args.sam_location}")
+    if len(os.listdir(args.sam_dir)) == 0:
+        raise Exception(f"No sam regions found at {args.sam_dir}")
     image_id_to_sam = load_all_sam_regions(args)
     all_annotations = os.listdir(args.annotation_location)
     for i,ann in enumerate(tqdm(all_annotations,desc='Label Features',total=len(all_annotations))):
@@ -67,7 +70,52 @@ def label_all_regions(args):
             labels = label_region(args,sam_region,annotation_map)
             sam_labels['labels'] = labels 
             region_to_label.append(sam_labels)
-        utils.save_pkl_file(os.path.join(args.region_labels,args.dataset_name),ann.replace('.png',''),region_to_label)
+        utils.save_pkl_file(os.path.join(args.region_labels,ann.replace('.png','')),region_to_label)
 
 
 
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--main_dir",
+        type=str,
+        default="/shared/rsaas/dino_sam"
+    )
+    parser.add_argument(
+        "--region_labels",
+        type=str,
+        default=None,
+        help="Location to store ground truth of label regions",
+    )
+    parser.add_argument(
+        "--annotation_location",
+        type=str,
+        default=None,
+        help="Location of per-pixel annotations",
+    )
+    parser.add_argument(
+        "--ignore_zero",
+        action="store_true"
+        help="Include 0 class"
+    )
+     parser.add_argument(
+        "--num_classes",
+        ,
+        default=0,
+        help="Number of classes in dataset"
+    )
+    parser.add_argument(
+        "--sam_dir",
+        type=str,
+        default=None,
+        help="Location of SAM regions"
+    )
+      parser.add_argument(
+        "--label_percent",
+        type=int,
+        default=95,
+        help="Percent of pixels within a region that need to belong to the same class before region is assigned that label"
+    )
+    
+    args = parser.parse_args()
+    label_all_regions(args)

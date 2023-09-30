@@ -6,12 +6,13 @@ import os
 import copy 
 import cv2 
 from typing import Any, Dict, List
+import argparse 
 def get_sam_regions(args):
     # basically copy of  segment-anything/scripts/amg.py
     os.chdir(os.path.join(args.main_dir,'segment-anything'))
 
     from segment_anything import SamAutomaticMaskGenerator, sam_model_registry
-     sam = sam_model_registry[args.model_type](checkpoint=args.checkpoint)
+    sam = sam_model_registry[args.model_type](checkpoint=args.checkpoint)
     _ = sam.to(device=args.device)
     output_mode = "coco_rle" if args.convert_to_rle else "binary_mask"
     amg_kwargs = get_amg_kwargs(args)
@@ -49,17 +50,17 @@ def get_sam_regions(args):
                 json.dump(masks, f)
     print("Done!")
     # add region ids 
-    sam_files = os.listdir(args.sam_location)
+    sam_files = os.listdir(args.output)
     for f in sam_files:
         new_sam_regions = []
-        all_regions = utils.open_json_file(os.path.join(args.sam_location,args.dataset_name),f)
+        all_regions = utils.open_json_file(args.output,f)
         for i,region in enumerate(all_regions):
             image_id = f.replace('.json','')
             region_id = f'{image_id}_region_{i}'
             new_region = copy.deepcopy(region)
             new_region['region_id'] = region_id 
             new_sam_regions.append(new_region)
-        utils.save_json_file(os.path.join(args.sam_location,args.dataset_name),f)
+        utils.save_json_file(args.output,f)
     os.chdir(args.main_dir)
 
 
@@ -112,3 +113,138 @@ def get_amg_kwargs(args):
     amg_kwargs = {k: v for k, v in amg_kwargs.items() if v is not None}
     return amg_kwargs
 
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+
+
+    parser.add_argument("--main_dir",default="/shared/rsaas/dino_sam")
+    #sam regions 
+    parser.add_argument(
+    "--input",
+    type=str,
+    default=None,
+    help="Path to either a single input image or folder of images.")
+
+
+    parser.add_argument(
+    "--output",
+    type=str,
+    default=None,
+    help=(
+        "Path to the directory where masks will be output. Output will be either a folder "
+        "of PNGs per image or a single json with COCO-style masks."
+    ))
+
+    parser.add_argument(
+        "--model-type",
+        type=str,
+        default='vit_l',
+       
+        help="The type of model to load, in ['default', 'vit_h', 'vit_l', 'vit_b']",
+    )
+
+    parser.add_argument(
+        "--checkpoint",
+        type=str,
+        default=None,
+     
+        help="The path to the SAM checkpoint to use for mask generation.",
+    )
+
+    parser.add_argument("--device", type=str, default="cuda", help="The device to run generation on.")
+
+    parser.add_argument(
+        "--convert-to-rle",
+        action="store_true",
+        help=(
+            "Save masks as COCO RLEs in a single json instead of as a folder of PNGs. "
+            "Requires pycocotools."
+        ),
+    )
+
+    amg_settings = parser.add_argument_group("AMG Settings")
+
+    amg_settings.add_argument(
+        "--points-per-side",
+        type=int,
+        default=None,
+        help="Generate masks by sampling a grid over the image with this many points to a side.",
+    )
+
+    amg_settings.add_argument(
+        "--points-per-batch",
+        type=int,
+        default=None,
+        help="How many input points to process simultaneously in one batch.",
+    )
+
+    amg_settings.add_argument(
+        "--pred-iou-thresh",
+        type=float,
+        default=None,
+        help="Exclude masks with a predicted score from the model that is lower than this threshold.",
+    )
+
+    amg_settings.add_argument(
+        "--stability-score-thresh",
+        type=float,
+        default=None,
+        help="Exclude masks with a stability score lower than this threshold.",
+    )
+
+    amg_settings.add_argument(
+        "--stability-score-offset",
+        type=float,
+        default=None,
+        help="Larger values perturb the mask more when measuring stability score.",
+    )
+
+    amg_settings.add_argument(
+        "--box-nms-thresh",
+        type=float,
+        default=None,
+        help="The overlap threshold for excluding a duplicate mask.",
+    )
+
+    amg_settings.add_argument(
+        "--crop-n-layers",
+        type=int,
+        default=None,
+        help=(
+            "If >0, mask generation is run on smaller crops of the image to generate more masks. "
+            "The value sets how many different scales to crop at."
+        ),
+    )
+
+    amg_settings.add_argument(
+        "--crop-nms-thresh",
+        type=float,
+        default=None,
+        help="The overlap threshold for excluding duplicate masks across different crops.",
+    )
+
+    amg_settings.add_argument(
+        "--crop-overlap-ratio",
+        type=int,
+        default=None,
+        help="Larger numbers mean image crops will overlap more.",
+    )
+
+    amg_settings.add_argument(
+        "--crop-n-points-downscale-factor",
+        type=int,
+        default=None,
+        help="The number of points-per-side in each layer of crop is reduced by this factor.",
+    )
+
+    amg_settings.add_argument(
+        "--min-mask-region-area",
+        type=int,
+        default=None,
+        help=(
+            "Disconnected mask regions or holes with area smaller than this value "
+            "in pixels are removed by postprocessing."
+        ),
+    )
+    args = parser.parse_args()
+    get_sam_regions(args)

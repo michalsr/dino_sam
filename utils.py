@@ -1,41 +1,39 @@
 import pickle 
 import os 
-
-def save_pkl_file(parent_dir,filename,file_contents):
+from json import JSONEncoder
+from typing import Dict, Optional
+def save_pkl_file(filename,file_contents):
+    parent_dir = filename.split('/')[-2]
     if not os.path.exists(parent_dir):
         os.makedirs(parent_dir)
-    if filename != '':
-        full_path = os.path.join(parent_dir,filename)
-    else:
-        full_path = parent_dir 
-    with open(full_path, 'wb') as f:
+
+    with open(filename, 'wb') as f:
             pickle.dump(file_contents, f)
 
-def open_pkl_file(parent_dir,filename):
-    if filename != '':
-        full_path = os.path.join(parent_dir,filename)
-    else:
-        full_path = parent_dir
-    with open(full_path,'rb') as r:
+def open_pkl_file(filename):
+    with open(filename,'rb') as r:
         file_contents = pickle.load(r)
     return file_contents 
-def open_json_file(parent_dir,filename):
-    if filename != '':
-        full_path = os.path.join(parent_dir,filename)
-    else:
-        full_path = parent_dir
-    with open(full_path,'r+') as r:
+def open_json_file(filename):
+    with open(filename,'r+') as r:
         file_contents = json.load(r)
     return file_contents
 
-def save_json_file(parent_dir,filename,file_contents):
-    if filename != '':
-        full_path = os.path.join(parent_dir,filename)
+def save_json_file(filename,file_contents,numpy=False):
+    parent_dir = filename.split('/')[-2]
+    if not os.path.exists(parent_dir):
+        os.makedirs(parent_dir)
+    if not numpy:
+        with open(filename,'w+') as w:
+            json.dump(file_contents,w)
     else:
-        full_path = parent_dir
-    with open(full_path,'w+') as w:
-        json.dump(file_contents,w)
-    
+          with open(filename,'w+') as w:
+            json.dump(file_contents,w,cls=NumpyArrayEncoder)
+class NumpyArrayEncoder(JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, numpy.ndarray):
+            return obj.tolist()
+        return JSONEncoder.default(self, obj)
 def intersect_and_union(
     pred_label,
     label,
