@@ -67,7 +67,7 @@ def label_all_regions(args):
             sam_labels = {}
             sam_labels['region_id'] = region['region_id']
             sam_mask = mask_utils.decode(region['segmentation'])
-            labels = label_region(args,sam_region,annotation_map)
+            labels = label_region(args,sam_mask,annotation_map)
             sam_labels['labels'] = labels 
             region_to_label.append(sam_labels)
         utils.save_file(os.path.join(args.region_labels,ann.replace('.png','')),region_to_label)
