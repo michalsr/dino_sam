@@ -29,7 +29,10 @@ def region_features(args,image_id_to_sam):
         sam_regions = image_id_to_sam[file_name.replace(ext,'')]
         # sam regions within an image all have the same total size 
         new_h, new_w = mask_utils.decode(sam_regions[0]['segmentation']).shape
-        upsample_feature = torch.nn.functional.upsample(features,size=[new_h,new_w],mode='bilinear').squeeze()
+        patch_length = args.dino_patch_length
+        padded_h, padded_w = math.ceil(new_h / patch_length) * patch_length, math.ceil(new_w / patch_length) * patch_length # Get the padded height and width
+        upsample_feature = torch.nn.functional.upsample(features,size=[padded_h,padded_w],mode='bilinear') # First interpolate to the padded size
+        upsample_feature = T.CenterCrop((new_h, new_w)) (upsample_feature).squeeze(dim = 0) # Apply center cropping to the original size
         f,h,w = upsample_feature.size()
         for region in sam_regions:
                 sam_region_feature = {}
@@ -83,6 +86,13 @@ if __name__ == '__main__':
         type=str,
         default=None,
         help="Location of features per region/pooled features",
+    )
+
+    parser.add_argument(
+        "--dino_patch_length",
+        type=int,
+        default=14,
+        help="the length of dino patch",
     )
 
     args = parser.parse_args()
