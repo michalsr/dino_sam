@@ -67,7 +67,7 @@ def label_all_regions(args):
             sam_labels = {}
             sam_labels['region_id'] = region['region_id']
             sam_mask = mask_utils.decode(region['segmentation'])
-            labels = label_region(args,sam_region,annotation_map)
+            labels = label_region(args,sam_mask,annotation_map)
             sam_labels['labels'] = labels 
             region_to_label.append(sam_labels)
         utils.save_file(os.path.join(args.region_labels,ann.replace('.png','')),region_to_label)
@@ -95,12 +95,11 @@ if __name__ == '__main__':
     )
     parser.add_argument(
         "--ignore_zero",
-        action="store_true"
+        action="store_true",
         help="Include 0 class"
     )
-     parser.add_argument(
+    parser.add_argument(
         "--num_classes",
-        ,
         default=0,
         help="Number of classes in dataset"
     )
@@ -110,7 +109,7 @@ if __name__ == '__main__':
         default=None,
         help="Location of SAM regions"
     )
-      parser.add_argument(
+    parser.add_argument(
         "--label_percent",
         type=int,
         default=95,

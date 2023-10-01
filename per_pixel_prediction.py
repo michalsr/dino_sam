@@ -60,7 +60,7 @@ def get_region_per_pixel_preds(args):
         pixel_to_region_map = utils.open_file(os.path.join(pixel_region,file))
         all_features = softmax(feature_predictions,axis=0)
         all_pixels = {k:np.argmax(all_features[:,[region_all[x] for x in v]].mean(axis=1),axis=0) for k,v in pixel_to_region_map.items()}
-        utls.save_file(os.path.join(args.pixel_pred_dir,file,)all_pixels)
+        utils.save_file(os.path.join(args.pixel_pred_dir,file,), all_pixels)
 
 if __name__ == '__main__':
 
@@ -101,7 +101,7 @@ if __name__ == '__main__':
     )
     parser.add_argument(
         "--ignore_zero",
-        action="store_true"
+        action="store_true",
         help="Include 0 class"
     )
     parser.add_argument(

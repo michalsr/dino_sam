@@ -46,7 +46,7 @@ def load_features(args,split='train'):
     save_dict['feature'] = np.stack(feature_all)
     save_dict['label'] = np.stack(label_all)
     save_dict['weight'] = np.stack(weight_all)
-    utils.save_file(os.path.join(classifier_dir,split+'.pkl'),save_dict)
+    utils.save_file(os.path.join(args.classifier_dir,split+'.pkl'),save_dict)
     return save_dict
 
 
@@ -63,7 +63,7 @@ def evaluate_classifier(args, class_id):
                                        sample_weight=val_data['weight'])
     print(f'ROC AUC SCORE = {roc_auc_score} for class {class_id}')
     print(f'Average Precision Score = {ap_score} for class {class_id}')
-    return roc_auc, ap_score 
+    return roc_auc_score, ap_score 
 
 
 def train_classifier(args, class_id):
@@ -93,7 +93,7 @@ def train_and_evaluate(args):
     if not os.path.exists(training_file):
         train_data = load_features(args,'train')
     else:
-        train_data = utils.open_file(trainig_file)
+        train_data = utils.open_file(training_file)
     if not os.path.exists(val_file):
         val_data = load_features(args,'val')
     else:
@@ -139,11 +139,11 @@ if __name__ == '__main__':
         help="Location where ground truth label regions are stored for val images",
     )
     parser.add_argument('--iterations',
-    default=200,
-    help='Number of iterations to run log regression')
+                         default=200,
+                         help='Number of iterations to run log regression')
     parser.add_argument(
         "--ignore_zero",
-        action="store_true"
+        action="store_true",
         help="Include 0 class"
     )
     parser.add_argument(
@@ -178,7 +178,7 @@ if __name__ == '__main__':
     )
     parser.add_argument(
         "--eval_only",
-        action="store_true"
+        action="store_true",
         help="No classifier training"
     )
     args = parser.parse_args()

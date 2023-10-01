@@ -3,8 +3,9 @@ import os
 from json import JSONEncoder
 from typing import Dict, Optional
 import yaml 
-
-
+import json
+import numpy as np
+from tqdm import tqdm
 
 def save_file(filename,data,json_numpy=False):
     """
@@ -90,7 +91,7 @@ def save_json_file(filename,file_contents,numpy=False):
             json.dump(file_contents,w,cls=NumpyArrayEncoder)
 class NumpyArrayEncoder(JSONEncoder):
     def default(self, obj):
-        if isinstance(obj, numpy.ndarray):
+        if isinstance(obj, np.ndarray):
             return obj.tolist()
         return JSONEncoder.default(self, obj)
 def intersect_and_union(

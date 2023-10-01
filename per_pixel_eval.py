@@ -1,6 +1,11 @@
 import argparse 
 from utils import mean_iou
 from PIL import Image
+from tqdm import tqdm
+import utils
+import numpy as np
+import os
+
 """
 Format predictions and compute mean IOU for a dataset 
 """
@@ -47,7 +52,7 @@ def get_mean_iou(args,actual_labels,pred_labels):
 
 
 if __name__ == '__main__':
-    arser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser()
     parser.add_argument(
         "--main_dir",
         type=str,
@@ -68,7 +73,7 @@ if __name__ == '__main__':
         "--annotation_dir",
         type=str,
         default=None,
-        help="Location of ground truth annotations'
+        help="Location of ground truth annotations"
     )
     parser.add_argument(
         "--result_dir",
@@ -79,4 +84,4 @@ if __name__ == '__main__':
     
     args = parser.parse_args()
     predicted_labels,actual_labels = format_predictions(args)
-    get_mean_iou(args,actual_labels,pred_labels)
+    get_mean_iou(args,actual_labels,predicted_labels)
