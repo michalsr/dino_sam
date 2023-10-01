@@ -45,8 +45,10 @@ def extract(args,model,image):
         T.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))])
     with torch.no_grad():
         layers = eval(args.layers)
-        print(f"Using layers:{eval(args.layers)})")
+     
+        print(f"Using layers:{layers}")
         # intermediate layers does not use a norm or go through the very last layer of output
+        model = model.cuda()
         features_out = model.get_intermediate_layers(transform(image).cuda(), n=layers,reshape=True)
         features = torch.stack(features_out, dim=-1)
         b,c, h, w, num_layers = features.size()
@@ -58,7 +60,7 @@ def extract(args,model,image):
             size = len(num_layers)
         else:
             size =1 
-        features = features.view(1,c*size,h_14,w_14)
+        features = features.view(1,c*size,h,w)
     return features 
 
 
@@ -67,7 +69,7 @@ def extract_features(model,args):
     for i,f in enumerate(tqdm(all_image_files,desc='Extract',total=len(all_image_files))):
             image_name = f 
             filename_extension = os.path.splitext(image_name)[1]  
-            image = Image.open(os.path.join(self.image_dir,f)).convert('RGB')
+            image = Image.open(os.path.join(args.image_dir,f)).convert('RGB')
             features = extract(args,model,image)
             utils.save_file(os.path.join(args.feature_dir,image_name.replace(filename_extension,".pkl")),features.cpu().numpy())
 
@@ -92,17 +94,22 @@ if __name__ == '__main__':
         default=None,
         help="Location of jpg files",
     )
-
-     parser.add_argument(
+    parser.add_argument(
+        "--model_repo_name",
+        type=str,
+        default="facebookresearch/dinov2",
+        help="PyTorch model name for downloading from PyTorch hub"
+    )
+    parser.add_argument(
         "--model",
         type=str,
         default='dinov2_vitl14',
         help="Name of model from repo"
     )
     parser.add_argument(
-        "--last_n_layers",
+        "--layers",
         type=str,
-        default="4",
+        default="[4]",
         help="How many layers to use if intermediate_layers=True. Can also pass in list of layers"
     )
     parser.add_argument(

@@ -12,8 +12,8 @@ def save_file(filename,data,json_numpy=False):
     Supported:
         .pkl, .pickle, .npy, .json
     """
-    parent_directory = os.path.dirname(filename)
-     if not os.path.exists(parent_dir):
+    parent_dir = os.path.dirname(filename)
+    if not os.path.exists(parent_dir):
         os.makedirs(parent_dir)
     file_ext = os.path.splitext(filename)[1]       
     if file_ext == ".npy":
