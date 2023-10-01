@@ -95,12 +95,11 @@ if __name__ == '__main__':
     )
     parser.add_argument(
         "--ignore_zero",
-        action="store_true"
+        action="store_true",
         help="Include 0 class"
     )
-     parser.add_argument(
+    parser.add_argument(
         "--num_classes",
-        ,
         default=0,
         help="Number of classes in dataset"
     )
@@ -110,7 +109,7 @@ if __name__ == '__main__':
         default=None,
         help="Location of SAM regions"
     )
-      parser.add_argument(
+    parser.add_argument(
         "--label_percent",
         type=int,
         default=95,
