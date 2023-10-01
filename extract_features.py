@@ -92,7 +92,7 @@ if __name__ == '__main__':
         "--feature_dir",
         type=str,
         default=None,
-        help="Location of jpg files",
+        help="Location of feature files",
     )
     parser.add_argument(
         "--model_repo_name",
@@ -110,7 +110,7 @@ if __name__ == '__main__':
         "--layers",
         type=str,
         default="[4]",
-        help="How many layers to use if intermediate_layers=True. Can also pass in list of layers"
+        help="List of layers or number of last layers to take"
     )
     parser.add_argument(
         "--padding",
