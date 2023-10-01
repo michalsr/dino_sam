@@ -109,7 +109,7 @@ if __name__ == '__main__':
     parser.add_argument(
         "--layers",
         type=str,
-        default="[4]",
+        default="[20,21,22,23]",
         help="List of layers or number of last layers to take"
     )
     parser.add_argument(
