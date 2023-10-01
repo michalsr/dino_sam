@@ -11,7 +11,7 @@ def format_predictions(args):
     for f in tqdm(all_pixel_files,total=len(all_pixel_files)):
         if '.pkl' in f:
             # load predicted 
-            preds = utils.open_pkl_file(os.path.join(args.pixel_pred_dir,f))
+            preds = utils.open_file(os.path.join(args.pixel_pred_dir,f))
             actual = np.array(Image.open(os.path.join(args.annotation_location,f.replace('.pkl','.png'))))
             # load actual
             preds_reshape = np.zeros((actual.shape[0],actual.shape[1]))
@@ -42,7 +42,7 @@ def get_mean_iou(args,actual_labels,pred_labels):
     num_labels=num_classes,
     ignore_index=255,
     reduce_labels=reduce_labels)
-    utils.save_json_file(os.path.join(args.result_dir,'mean_iou.json'),iou_result,numpy=True)
+    utils.save_file(os.path.join(args.result_dir,'mean_iou.json'),iou_result,json_numpy=True)
     return iou_result 
 
 

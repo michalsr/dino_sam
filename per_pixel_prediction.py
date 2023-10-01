@@ -16,9 +16,10 @@ def sam_region_to_pixel(args):
     # get pixel values for each region
     all_sam = os.listdir(args.sam_dir)
     for f in tqdm(all_sam):
+        ext = os.path.splitext(f)[1]  
         # open sam file 
         all_pixels = {}
-        sam_regions = utils.open_json_file(os.path.join(sam_dir,f))
+        sam_regions = utils.open_file(os.path.join(args.sam_dir,f))
         for region in sam_regions:
             mask = mask_utils.decode(region['segmentation'])
             #can use np.nonzero as well 
@@ -28,7 +29,7 @@ def sam_region_to_pixel(args):
                     if (x,y) not in all_pixels:
                         all_pixels[(x,y)] = []
                     all_pixels[(x,y)].append(region['region_id'])
-        utils.save_pkl_file(os.path.join(args.pixel_to_region_dir,f.replace('.json','.pkl')),all_pixels)
+        utils.save_file(os.path.join(args.pixel_to_region_dir,f.replace(ext,'.pkl')),all_pixels)
 
 def get_region_per_pixel_preds(args):
     model_path = args.classifier_dir
@@ -38,7 +39,7 @@ def get_region_per_pixel_preds(args):
     files = [filename for filename in os.listdir(pixel_region)]
     for file in tqdm(files):
         all_pixels = {}
-        region_features = utils.open_pkl_file(os.path.join(val_feature,file))
+        region_features = utils.open_file(os.path.join(val_feature,file))
         if args.ignore_zero:
             total_classes -= 1 
             min_class = 1
@@ -50,16 +51,16 @@ def get_region_per_pixel_preds(args):
         region_all = {area['region_id']:j for j,area in enumerate(region_features)}
         features = np.stack(feature_all)
         for i in range(min_class,args.num_classes+1):
-            loaded_model = utils.open_pkl_file(os.path.join(model_path,f'model_{i}.sav'))
+            loaded_model = utils.open_file(os.path.join(model_path,f'model_{i}.sav'))
             predictions = loaded_model.decision_function(features)
             if args.ignore_zero:
                 feature_predictions[i-1, :] = predictions
             else:
                 feature_predictions[i, :] = predictions
-        pixel_to_region_map = utils.open_pkl_file(os.path.join(pixel_region,file))
+        pixel_to_region_map = utils.open_file(os.path.join(pixel_region,file))
         all_features = softmax(feature_predictions,axis=0)
         all_pixels = {k:np.argmax(all_features[:,[region_all[x] for x in v]].mean(axis=1),axis=0) for k,v in pixel_to_region_map.items()}
-        utls.save_pkl_file(os.path.join(args.pixel_pred_dir,file,)all_pixels)
+        utls.save_file(os.path.join(args.pixel_pred_dir,file,)all_pixels)
 
 if __name__ == '__main__':
 

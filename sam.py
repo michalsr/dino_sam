@@ -60,7 +60,7 @@ def get_sam_regions(args):
             new_region = copy.deepcopy(region)
             new_region['region_id'] = region_id 
             new_sam_regions.append(new_region)
-        utils.save_json_file(args.output,f)
+        utils.save_file(args.output,f)
     os.chdir(args.main_dir)
 
 

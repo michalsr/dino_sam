@@ -27,8 +27,8 @@ def load_features(args,split='train'):
     label_files = os.listdir(label_dir)
 
     for file_name in tqdm(label_files):
-        file_features = utils.open_pkl_file(os.path.join(feature_dir,f))
-        file_labels = utils.open_pkl_file(os.path.join(label_dir,f))
+        file_features = utils.open_file(os.path.join(feature_dir,file_name))
+        file_labels = utils.open_file(os.path.join(label_dir,file_name))
 
  
 
@@ -46,14 +46,14 @@ def load_features(args,split='train'):
     save_dict['feature'] = np.stack(feature_all)
     save_dict['label'] = np.stack(label_all)
     save_dict['weight'] = np.stack(weight_all)
-    utils.save_pkl_file(os.path.join(classifier_dir,split+'.pkl'),save_dict)
+    utils.save_file(os.path.join(classifier_dir,split+'.pkl'),save_dict)
     return save_dict
 
 
 def evaluate_classifier(args, class_id):
     file = os.path.join(args.classifier_dir, 'val.pkl')
-    val_data = utils.open_pkl_file(file)
-    loaded_model = utils.open_pkl_file(os.path.join(args.classifier_dir,f'model_{class_id}.sav'))
+    val_data = utils.open_file(file)
+    loaded_model = utils.open_file(os.path.join(args.classifier_dir,f'model_{class_id}.sav'))
     target_label = np.zeros_like(val_data['label'])
     target_label.fill(-1)
     target_label[np.where(val_data['label'] == class_id)] = 1
@@ -68,7 +68,7 @@ def evaluate_classifier(args, class_id):
 
 def train_classifier(args, class_id):
     file = os.path.join(args.classifier_dir, 'train.pkl')
-    train_data = utils.open_pkl_file(file)
+    train_data = utils.open_file(file)
     target_label = np.zeros_like(train_data['label'])
     target_label.fill(-1)
     target_label[np.where(train_data['label'] == class_id)] = 1
@@ -77,7 +77,7 @@ def train_classifier(args, class_id):
                                                                                  target_label,
                                                                                     sample_weight=train_data['weight'])
     save_dir = os.path.join(args.classifier_dir,f'model_{class_id}.sav')
-    utils.save_pkl_file(save_dir,classifier)
+    utils.save_file(save_dir,classifier)
     print(f'Saved classifier for {class_id} to {save_dir}')
 
 
@@ -93,11 +93,11 @@ def train_and_evaluate(args):
     if not os.path.exists(training_file):
         train_data = load_features(args,'train')
     else:
-        train_data = utils.open_pkl_file(trainig_file)
+        train_data = utils.open_file(trainig_file)
     if not os.path.exists(val_file):
         val_data = load_features(args,'val')
     else:
-        val_data = utils.open_pkl_file(val_file,)
+        val_data = utils.open_file(val_file)
     class_ids = np.unique(train_data['label'])
     min_class = class_ids[0]
     max_class = class_ids[-1]
@@ -113,7 +113,7 @@ def train_and_evaluate(args):
         avg_roc_auc.append(roc_auc)
    
     utils.save_json_file(os.path.join(args.results_dir,'avg_ap.json'),avg_ap)
-    utils.save_json_file(os.path.join(args.results_dir),'avg_roc_auc.json',avg_roc_auc)
+    utils.save_json_file(os.path.join(args.results_dir,'avg_roc_auc.json'),avg_roc_auc)
     print(f'Avg AP :{np.mean(avg_ap)}')
     print(f'AVG ROC AUC:{np.mean(avg_roc_auc)}')
 

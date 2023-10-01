@@ -22,10 +22,11 @@ Given extracted regions from SAM and image features, create feature vectors for 
 def region_features(args,image_id_to_sam):
     all_feature_files = [f for f in os.listdir(args.feature_dir) if os.path.isfile(os.path.join(args.feature_dir, f))]
     for i,f in enumerate(tqdm(all_feature_files,desc='Region features',total=len(all_feature_files))):
-        features = utils.open_pkl_file(os.path.join(args.feature_dir,f))
+        features = utils.open_file(os.path.join(args.feature_dir,f))
         file_name =f 
+        ext = os.path.splitext(f)[1]  
         all_region_features_in_image = []
-        sam_regions = image_id_to_sam[file_name.replace('.pkl','')]
+        sam_regions = image_id_to_sam[file_name.replace(ext,'')]
         # sam regions within an image all have the same total size 
         new_h, new_w = mask_utils.decode(sam_regions[0]['segmentation']).shape
         upsample_feature = torch.nn.functional.upsample(features,size=[new_h,new_w],mode='bilinear').squeeze()
@@ -39,15 +40,15 @@ def region_features(args,image_id_to_sam):
                 features_in_sam = upsample_feature[:,r_1,r_2].view(f,-1).mean(1).cpu().numpy()
                 sam_region_feature['region_feature'] = features_in_sam
                 all_region_features_in_image.append(sam_region_feature)
-        utils.save_pkl_file(os.path.join(args.region_feature_dir,file_name.replace('.pkl','')),all_region_features_in_image)
+        utils.save_file(os.path.join(args.region_feature_dir,file_name.replace(ext,'.pkl')),all_region_features_in_image)
 
 def load_all_sam_regions(args):
-    if len(os.listdir(args.sam_location)) == 0:
-        raise Exception(f"No sam regions found at {args.sam_location}")
+    if len(os.listdir(args.sam_dir)) == 0:
+        raise Exception(f"No sam regions found at {args.sam_dir}")
     print(f"Loading sam regions from {args.sam_dir}")
     image_id_to_sam = {}
     for f in tqdm(os.listdir(args.sam_dir)):
-        sam_regions = utils.open_json_file(os.path.join(args.sam_dir,f))
+        sam_regions = utils.open_file(os.path.join(args.sam_dir,f))
         image_id_to_sam[f.replace('.json','')] = sam_regions
     return image_id_to_sam
 

@@ -17,7 +17,7 @@ def load_all_sam_regions(args):
     print(f"Loading sam regions from {args.sam_dir}")
     image_id_to_sam = {}
     for f in tqdm(os.listdir(args.sam_dir)):
-        sam_regions = utils.open_json_file(args.sam_dir,f)
+        sam_regions = utils.open_file(args.sam_dir,f)
         image_id_to_sam[f.replace('.json','')] = sam_regions
     return image_id_to_sam
 
@@ -70,7 +70,7 @@ def label_all_regions(args):
             labels = label_region(args,sam_region,annotation_map)
             sam_labels['labels'] = labels 
             region_to_label.append(sam_labels)
-        utils.save_pkl_file(os.path.join(args.region_labels,ann.replace('.png','')),region_to_label)
+        utils.save_file(os.path.join(args.region_labels,ann.replace('.png','')),region_to_label)
 
 
 

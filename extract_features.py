@@ -66,9 +66,10 @@ def extract_features(model,args):
     all_image_files = [f for f in os.listdir(args.image_dir) if os.path.isfile(os.path.join(args.image_dir, f))]
     for i,f in enumerate(tqdm(all_image_files,desc='Extract',total=len(all_image_files))):
             image_name = f 
+            filename_extension = os.path.splitext(image_name)[1]  
             image = Image.open(os.path.join(self.image_dir,f)).convert('RGB')
             features = extract(args,model,image)
-            utils.save_pkl_file(os.path.join(args.feature_dir,image_name),features.cpu().numpy())
+            utils.save_file(os.path.join(args.feature_dir,image_name.replace(filename_extension,".pkl")),features.cpu().numpy())
 
 
 
