@@ -57,20 +57,25 @@ def evaluate_classifier(args, class_id):
     target_label = np.zeros_like(val_data['label'])
     target_label.fill(-1)
     target_label[np.where(val_data['label'] == class_id)] = 1
-    roc_auc_score = roc_auc_score(target_label, loaded_model.decision_function(val_data['feature']),
+    roc_auc = roc_auc_score(target_label, loaded_model.decision_function(val_data['feature']),
                                   sample_weight=val_data['weight'], multi_class='ovr')
     ap_score = average_precision_score(target_label, loaded_model.decision_function(val_data['feature']),
                                        sample_weight=val_data['weight'])
     print(f'ROC AUC SCORE = {roc_auc_score} for class {class_id}')
     print(f'Average Precision Score = {ap_score} for class {class_id}')
-    return roc_auc_score, ap_score 
+    return roc_auc, ap_score 
 
 
 def train_classifier(args, class_id):
     file = os.path.join(args.classifier_dir, 'train.pkl')
     train_data = utils.open_file(file)
+    if class_id != 0:
+        train_data['label'] = train_data['label'][train_data['label']!=0]
+        train_data['feature'] = train_data['feature'][:,train_data['label']!=0]
+        train_data['weight'] = train_data['weight'][train_data['label']!=0]
     target_label = np.zeros_like(train_data['label'])
     target_label.fill(-1)
+    
     target_label[np.where(train_data['label'] == class_id)] = 1
     print('Training classifier')
     classifier = LogisticRegression(verbose=1, multi_class='ovr', max_iter=args.iterations).fit(train_data['feature'],
