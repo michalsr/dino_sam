@@ -35,7 +35,7 @@ def label_region(args,sam_region,annotation_map):
     # get total num of pixels 
     num_pixels = sum(all_pixels_in_region.values())
     #check if any pixel is greater than certain percent value 
-    more_than_percent= [(pixel_val,pixel_count) for pixel_val,pixel_count in all_pixels_in_region.items() if all((pixel_count>(args.label_percent/100)*num_pixels,pixel_val in range(start_class,int(args.num_classes)+1)))]
+    more_than_percent= [(pixel_val,pixel_count) for pixel_val,pixel_count in all_pixels_in_region.items() if all((pixel_count>((args.label_percent/100)*num_pixels),pixel_val>=start_class,pixel_val<=args.num_classes+1))]
     # initialize all as None 
   
     initial_label  = {key: None for key in list(range(start_class,args.num_classes+1))}
@@ -73,7 +73,7 @@ def label_all_regions(args):
             labels = label_region(args,sam_mask,annotation_map)
             sam_labels['labels'] = labels 
             region_to_label.append(sam_labels)
-        utils.save_file(os.path.join(args.region_labels,ann.replace('.png','')),region_to_label)
+        utils.save_file(os.path.join(args.region_labels,ann.replace('.png','.pkl')),region_to_label)
 
 
 
