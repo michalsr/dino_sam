@@ -89,7 +89,7 @@ def train_classifier(args, class_id):
 
 def train_and_evaluate(args):
 
-    result_dir = args.result_dir
+
     training_file = os.path.join(args.classifier_dir,'train.pkl')
     val_file = os.path.join(args.classifier_dir,'val.pkl')
     # root_feature, root_label, save_root,
@@ -115,8 +115,8 @@ def train_and_evaluate(args):
         avg_ap.append(ap_score)
         avg_roc_auc.append(roc_auc)
    
-    utils.save_json_file(os.path.join(args.results_dir,'avg_ap.json'),avg_ap)
-    utils.save_json_file(os.path.join(args.results_dir,'avg_roc_auc.json'),avg_roc_auc)
+    utils.save_file(os.path.join(args.results_dir,'avg_ap.json'),avg_ap)
+    utils.save_file(os.path.join(args.results_dir,'avg_roc_auc.json'),avg_roc_auc)
     print(f'Avg AP :{np.mean(avg_ap)}')
     print(f'AVG ROC AUC:{np.mean(avg_roc_auc)}')
 
@@ -174,7 +174,7 @@ if __name__ == '__main__':
         help="Location to store trained classifiers"
     )
     parser.add_argument(
-        "--result_dir",
+        "--results_dir",
         type=str,
         default=None,
         help="Location to store AP, AUC-ROC results"
