@@ -107,8 +107,8 @@ def train_and_evaluate(args):
     avg_roc_auc = []
     for i in range(int(min_class),int(max_class)+1):
         if not args.eval_only:
-            train_classifier(args.region_feature_dir, args.region_labels_dir, args.classifier_dir,int(i))
-        roc_auc, ap_score  = evaluate_classifier(args.region_feature_dir,args.region_labels_dir, args.classifier_dir,int(i))
+            train_classifier(args, int(i))
+        roc_auc, ap_score  = evaluate_classifier(args,int(i))
         avg_ap.append(ap_score)
         avg_roc_auc.append(roc_auc)
    
