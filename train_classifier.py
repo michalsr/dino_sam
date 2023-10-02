@@ -33,6 +33,7 @@ def load_features(args,split='train'):
  
 
         for i, area in enumerate(file_features):
+
             area_feature = area['region_feature']
             area_label = file_labels[i]['labels']
             target_label = list(area_label.keys())[0]
@@ -61,7 +62,7 @@ def evaluate_classifier(args, class_id):
                                   sample_weight=val_data['weight'], multi_class='ovr')
     ap_score = average_precision_score(target_label, loaded_model.decision_function(val_data['feature']),
                                        sample_weight=val_data['weight'])
-    print(f'ROC AUC SCORE = {roc_auc_score} for class {class_id}')
+    print(f'ROC AUC SCORE = {roc_auc} for class {class_id}')
     print(f'Average Precision Score = {ap_score} for class {class_id}')
     return roc_auc, ap_score 
 
@@ -69,14 +70,11 @@ def evaluate_classifier(args, class_id):
 def train_classifier(args, class_id):
     file = os.path.join(args.classifier_dir, 'train.pkl')
     train_data = utils.open_file(file)
-    if class_id != 0:
-        train_data['label'] = train_data['label'][train_data['label']!=0]
-        train_data['feature'] = train_data['feature'][:,train_data['label']!=0]
-        train_data['weight'] = train_data['weight'][train_data['label']!=0]
     target_label = np.zeros_like(train_data['label'])
     target_label.fill(-1)
     
     target_label[np.where(train_data['label'] == class_id)] = 1
+    print((target_label==1).sum())
     print('Training classifier')
     classifier = LogisticRegression(verbose=1, multi_class='ovr', max_iter=args.iterations).fit(train_data['feature'],
                                                                                  target_label,
@@ -106,7 +104,7 @@ def train_and_evaluate(args):
     class_ids = np.unique(train_data['label'])
     min_class = class_ids[0]
     max_class = class_ids[-1]
-    if class_ids[0] and args.ignore_zero:
+    if class_ids[0]==0 and args.ignore_zero:
         min_class = class_ids[1]
     avg_ap = []
     avg_roc_auc = []

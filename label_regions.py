@@ -26,6 +26,7 @@ def load_all_sam_regions(args):
 def label_region(args,sam_region,annotation_map):
     sam_region_nonzero = np.where(sam_region != 0)
     # get pixel values from map 
+
     pixel_values_in_region = annotation_map[sam_region_nonzero[0],sam_region_nonzero[1]].flatten()
     unique_pixels, pixel_counts = np.unique(pixel_values_in_region,return_counts=True)
     all_pixels_in_region = dict(zip(unique_pixels,pixel_counts))
@@ -37,7 +38,7 @@ def label_region(args,sam_region,annotation_map):
     #check if any pixel is greater than certain percent value 
     more_than_percent= [(pixel_val,pixel_count) for pixel_val,pixel_count in all_pixels_in_region.items() if all((pixel_count>((args.label_percent/100)*num_pixels),pixel_val>=start_class,pixel_val<=args.num_classes+1))]
     # initialize all as None 
-  
+
     initial_label  = {key: None for key in list(range(start_class,args.num_classes+1))}
     final_label = {}
 
@@ -64,7 +65,8 @@ def label_all_regions(args):
     all_annotations = os.listdir(args.annotation_location)
     for i,ann in enumerate(tqdm(all_annotations,desc='Label Features',total=len(all_annotations))):
         region_to_label = []
-        annotation_map =np.array(Image.open(os.path.join(args.annotation_location,ann)))
+        annotation_map =np.array(Image.open(os.path.join(args.annotation_location,ann)),dtype=np.int64)
+      
         sam_regions = image_id_to_sam[ann.replace('.png','')]
         for region in sam_regions:
             sam_labels = {}
