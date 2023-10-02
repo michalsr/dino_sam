@@ -14,6 +14,7 @@ import os
 import argparse
 import utils 
 import torch.nn.functional as F
+from pathlib import Path
 """
 For extraction features for a given dataset and model. 
 """
@@ -38,7 +39,6 @@ class CenterPadding(torch.nn.Module):
 def extract_dino_v1(args,model,image):
     if args.padding != "center":
         raise Exception("Only padding center is implemented")
-    print("Using center padding")
     transform = T.Compose([
         T.ToTensor(),
         lambda x: x.unsqueeze(0),
@@ -46,23 +46,20 @@ def extract_dino_v1(args,model,image):
         T.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))])
     with torch.no_grad():
         layers = eval(args.layers)
-     
-        print(f"Using layers:{layers}")
         # intermediate layers does not use a norm or go through the very last layer of output
         model = model.cuda()
         features_out = model.get_intermediate_layers(transform(image).cuda(), n=layers)
         features = [f[:, 1:] for f in features_out] # Remove the cls tokens
-        features = torch.cat(features_out, dim=1) # B, C, H * W
-        B, C, _, _= features.shape
-        H, W = image.size
+        features = torch.cat(features, dim=-1) # B, H * W, C
+        B, _, C= features.shape
+        W, H = image.size
         patch_H, patch_W = math.ceil(H / args.multiple), math.ceil(W / args.multiple)
-        features = features.view(B, C, patch_H, patch_W) 
+        features = features.permute(0, 2, 1).view(B, C, patch_H, patch_W) 
     return features 
 
 def extract_dino_v2(args,model,image):
     if args.padding != "center":
         raise Exception("Only padding center is implemented")
-    print("Using center padding")
     transform = T.Compose([
         T.ToTensor(),
         lambda x: x.unsqueeze(0),
@@ -70,8 +67,6 @@ def extract_dino_v2(args,model,image):
         T.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))])
     with torch.no_grad():
         layers = eval(args.layers)
-     
-        print(f"Using layers:{layers}")
         # intermediate layers does not use a norm or go through the very last layer of output
         model = model.cuda()
         features_out = model.get_intermediate_layers(transform(image).cuda(), n=layers,reshape=True)
@@ -81,6 +76,14 @@ def extract_dino_v2(args,model,image):
 
 def extract_features(model,args):
     all_image_files = [f for f in os.listdir(args.image_dir) if os.path.isfile(os.path.join(args.image_dir, f))]
+    
+    # Create folder 
+    Path(args.feature_dir).mkdir(parents=True, exist_ok=True)
+
+    layers = eval(args.layers)
+    print("Using center padding")
+    print(f"Using layers:{layers}")
+
     for i,f in enumerate(tqdm(all_image_files,desc='Extract',total=len(all_image_files))):
         image_name = f 
         filename_extension = os.path.splitext(image_name)[1]  
@@ -130,7 +133,7 @@ if __name__ == '__main__':
     parser.add_argument(
         "--layers",
         type=str,
-        default="[4]",
+        default="[23]",
         help="List of layers or number of last layers to take"
     )
     parser.add_argument(
