@@ -33,7 +33,7 @@ def label_region(args,sam_region,annotation_map):
     # get total num of pixels 
     num_pixels = sum(all_pixels_in_region.values())
     #check if any pixel is greater than certain percent value 
-    more_than_percent= [pixel_val for pixel_val,pixel_count in all_pixels_in_region.items() if pixel_count>(args.label_percent/100)*num_pixels]
+    more_than_percent= [(pixel_val,pixel_count) for pixel_val,pixel_count in all_pixels_in_region.items() if all((pixel_count>(args.label_percent/100)*num_pixels,pixel_val in range(start_class,int(args.num_classes)+1)))]
     # initialize all as None 
     start_class = 0
     if args.ignore_zero:
@@ -41,17 +41,20 @@ def label_region(args,sam_region,annotation_map):
     initial_label  = {key: None for key in list(range(start_class,args.num_classes+1))}
     final_label = {}
 
+
     if len(more_than_percent)>0:
+        max_idx = np.argmax(np.asarray([t[1] for t in more_than_percent]))
+        max_pixel_class = [t[0] for t in more_than_percent][max_idx]
         # positive for that label 
-        assert len(more_than_percent)<2 
-        final_label[more_than_percent[0]] = 1
+
+        final_label[max_pixel_class] = 1
         # negative for the rest 
-        for key in list(range(start_class,args.num_classes+1)):
-            if key != more_than_percent[0]:
+        for key in list(range(start_class,int(args.num_classes)+1)):
+            if key != max_pixel_class:
                 final_label[key] = -1 
     else:
         # all zero 
-        final_label = {key:0 for key in list(range(start_class,args.num_classes+1))}      
+        final_label = {key:0 for key in list(range(start_class,int(args.num_classe)+1))}      
     return final_label
 
 def label_all_regions(args):
@@ -100,6 +103,7 @@ if __name__ == '__main__':
     )
     parser.add_argument(
         "--num_classes",
+        type=int,
         default=0,
         help="Number of classes in dataset"
     )
