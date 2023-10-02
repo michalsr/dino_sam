@@ -17,7 +17,7 @@ def load_all_sam_regions(args):
     print(f"Loading sam regions from {args.sam_dir}")
     image_id_to_sam = {}
     for f in tqdm(os.listdir(args.sam_dir)):
-        sam_regions = utils.open_file(args.sam_dir,f)
+        sam_regions = utils.open_file(os.path.join(args.sam_dir,f))
         image_id_to_sam[f.replace('.json','')] = sam_regions
     return image_id_to_sam
 
@@ -29,15 +29,15 @@ def label_region(args,sam_region,annotation_map):
     pixel_values_in_region = annotation_map[sam_region_nonzero[0],sam_region_nonzero[1]].flatten()
     unique_pixels, pixel_counts = np.unique(pixel_values_in_region,return_counts=True)
     all_pixels_in_region = dict(zip(unique_pixels,pixel_counts))
-
+    start_class = 0
+    if args.ignore_zero:
+        start_class = 1
     # get total num of pixels 
     num_pixels = sum(all_pixels_in_region.values())
     #check if any pixel is greater than certain percent value 
     more_than_percent= [(pixel_val,pixel_count) for pixel_val,pixel_count in all_pixels_in_region.items() if all((pixel_count>(args.label_percent/100)*num_pixels,pixel_val in range(start_class,int(args.num_classes)+1)))]
     # initialize all as None 
-    start_class = 0
-    if args.ignore_zero:
-        start_class = 1
+  
     initial_label  = {key: None for key in list(range(start_class,args.num_classes+1))}
     final_label = {}
 
@@ -54,7 +54,7 @@ def label_region(args,sam_region,annotation_map):
                 final_label[key] = -1 
     else:
         # all zero 
-        final_label = {key:0 for key in list(range(start_class,int(args.num_classe)+1))}      
+        final_label = {key:0 for key in list(range(start_class,int(args.num_classes)+1))}      
     return final_label
 
 def label_all_regions(args):
