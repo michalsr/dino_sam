@@ -40,11 +40,12 @@ def get_region_per_pixel_preds(args):
     for file in tqdm(files):
         all_pixels = {}
         region_features = utils.open_file(os.path.join(val_feature,file))
+
         if args.ignore_zero:
-            total_classes -= 1 
+            total_classes = args.num_classes
             min_class = 1
         else:
-            total_classes = args.num_classes
+            total_classes = args.num_classes+1
             min_class = 0
         feature_predictions = np.zeros((total_classes, len(region_features)))
         feature_all = [area['region_feature'] for j,area in enumerate(region_features)]
@@ -78,6 +79,7 @@ if __name__ == '__main__':
     )
     parser.add_argument(
         "--num_classes",
+        type=int,
         default=0,
         help="Number of classes in dataset"
     )
@@ -111,7 +113,7 @@ if __name__ == '__main__':
         help="Location to store class predictions for each pixel"
     )
     args = parser.parse_args()
-    sam_region_to_pixel(args)
+    #sam_region_to_pixel(args)
     get_region_per_pixel_preds(args)
 
     

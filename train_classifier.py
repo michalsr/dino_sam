@@ -74,7 +74,6 @@ def train_classifier(args, class_id):
     target_label.fill(-1)
     
     target_label[np.where(train_data['label'] == class_id)] = 1
-    print((target_label==1).sum())
     print('Training classifier')
     classifier = LogisticRegression(verbose=1, multi_class='ovr', max_iter=args.iterations).fit(train_data['feature'],
                                                                                  target_label,
