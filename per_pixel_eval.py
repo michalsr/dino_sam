@@ -17,7 +17,7 @@ def format_predictions(args):
         if '.pkl' in f:
             # load predicted 
             preds = utils.open_file(os.path.join(args.pixel_pred_dir,f))
-            actual = np.array(Image.open(os.path.join(args.annotation_location,f.replace('.pkl','.png'))))
+            actual = np.array(Image.open(os.path.join(args.annotation_dir,f.replace('.pkl','.png'))))
             # load actual
             preds_reshape = np.zeros((actual.shape[0],actual.shape[1]))
             actual_shape = np.zeros((actual.shape[0],actual.shape[1]))
@@ -57,6 +57,11 @@ if __name__ == '__main__':
         "--main_dir",
         type=str,
         default="/shared/rsaas/dino_sam"
+    )
+    parser.add_argument(
+        "--ignore_zero",
+        default="store_true",
+        help="If want to reduce labels, use this"
     )
     parser.add_argument(
         "--pixel_pred_dir",

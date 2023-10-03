@@ -102,7 +102,12 @@ def extract_features(model,args):
         image_name = f 
 
         filename_extension = os.path.splitext(image_name)[1]  
-        image = Image.open(os.path.join(args.image_dir,f)).convert('RGB')
+        try:
+            image = Image.open(os.path.join(args.image_dir,f)).convert('RGB')
+        except:
+            print(f'Could not read image {f}')
+            continue 
+
         #print(torch.cuda.memory_summary(),'before')
         if 'dino' in args.model:
             if 'dinov2' in args.model:
