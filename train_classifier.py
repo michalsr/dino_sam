@@ -30,10 +30,7 @@ def load_features(args,split='train'):
         file_features = utils.open_file(os.path.join(feature_dir,file_name))
         file_labels = utils.open_file(os.path.join(label_dir,file_name))
 
- 
-
         for i, area in enumerate(file_features):
-
             area_feature = area['region_feature']
             area_label = file_labels[i]['labels']
             target_label = list(area_label.keys())[0]
@@ -54,7 +51,7 @@ def load_features(args,split='train'):
 def evaluate_classifier(args, class_id):
     file = os.path.join(args.classifier_dir, 'val.pkl')
     val_data = utils.open_file(file)
-    loaded_model = utils.open_file(os.path.join(args.classifier_dir,f'model_{class_id}.sav'))
+    loaded_model = utils.open_file(os.path.join(args.classifier_dir, f'model_{class_id}.sav'))
     target_label = np.zeros_like(val_data['label'])
     target_label.fill(-1)
     target_label[np.where(val_data['label'] == class_id)] = 1
@@ -83,12 +80,7 @@ def train_classifier(args, class_id):
     print(f'Saved classifier for {class_id} to {save_dir}')
 
 
-
-
-
 def train_and_evaluate(args):
-
-
     training_file = os.path.join(args.classifier_dir,'train.pkl')
     val_file = os.path.join(args.classifier_dir,'val.pkl')
     # root_feature, root_label, save_root,
@@ -96,32 +88,34 @@ def train_and_evaluate(args):
         train_data = load_features(args,'train')
     else:
         train_data = utils.open_file(training_file)
+
     if not os.path.exists(val_file):
         val_data = load_features(args,'val')
-    else:
-        val_data = utils.open_file(val_file)
+
     class_ids = np.unique(train_data['label'])
     min_class = class_ids[0]
     max_class = class_ids[-1]
-    if class_ids[0]==0 and args.ignore_zero:
+
+    if class_ids[0] == 0 and args.ignore_zero:
         min_class = class_ids[1]
+
     avg_ap = []
     avg_roc_auc = []
     for i in range(int(min_class),int(max_class)+1):
         if not args.eval_only:
             train_classifier(args, int(i))
-        roc_auc, ap_score  = evaluate_classifier(args,int(i))
+
+        roc_auc, ap_score = evaluate_classifier(args, int(i))
         avg_ap.append(ap_score)
         avg_roc_auc.append(roc_auc)
    
-    utils.save_file(os.path.join(args.results_dir,'avg_ap.json'),avg_ap)
-    utils.save_file(os.path.join(args.results_dir,'avg_roc_auc.json'),avg_roc_auc)
+    utils.save_file(os.path.join(args.results_dir,'avg_ap.json'), avg_ap)
+    utils.save_file(os.path.join(args.results_dir,'avg_roc_auc.json'), avg_roc_auc)
     print(f'Avg AP :{np.mean(avg_ap)}')
     print(f'AVG ROC AUC:{np.mean(avg_roc_auc)}')
 
     
 if __name__ == '__main__':
-
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--main_dir",
@@ -147,11 +141,6 @@ if __name__ == '__main__':
         "--ignore_zero",
         action="store_true",
         help="Include 0 class"
-    )
-    parser.add_argument(
-        "--num_classes",
-        default=0,
-        help="Number of classes in dataset"
     )
     parser.add_argument(
         "--train_region_feature_dir",
@@ -185,5 +174,3 @@ if __name__ == '__main__':
     )
     args = parser.parse_args()
     train_and_evaluate(args)
-
-    
