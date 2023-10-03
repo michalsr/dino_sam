@@ -91,6 +91,8 @@ def train_and_evaluate(args):
 
     if not os.path.exists(val_file):
         val_data = load_features(args,'val')
+    else:
+        val_data = utils.open_file(val_file)
 
     class_ids = np.unique(train_data['label'])
     min_class = class_ids[0]
