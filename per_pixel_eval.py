@@ -48,6 +48,7 @@ def get_mean_iou(args,actual_labels,pred_labels):
     ignore_index=255,
     reduce_labels=reduce_labels)
     utils.save_file(os.path.join(args.result_dir,'mean_iou.json'),iou_result,json_numpy=True)
+    print(iou_result)
     return iou_result 
 
 
@@ -60,7 +61,7 @@ if __name__ == '__main__':
     )
     parser.add_argument(
         "--ignore_zero",
-        default="store_true",
+        action="store_true",
         help="If want to reduce labels, use this"
     )
     parser.add_argument(
@@ -71,6 +72,7 @@ if __name__ == '__main__':
     )
     parser.add_argument(
         "--num_classes",
+        type=int,
         default=0,
         help="Number of classes in dataset"
     )

@@ -62,10 +62,10 @@ def label_all_regions(args):
     if len(os.listdir(args.sam_dir)) == 0:
         raise Exception(f"No sam regions found at {args.sam_dir}")
     image_id_to_sam = load_all_sam_regions(args)
-    all_annotations = os.listdir(args.annotation_location)
+    all_annotations = os.listdir(args.annotation_dir)
     for i,ann in enumerate(tqdm(all_annotations,desc='Label Features',total=len(all_annotations))):
         region_to_label = []
-        annotation_map =np.array(Image.open(os.path.join(args.annotation_location,ann)),dtype=np.int64)
+        annotation_map =np.array(Image.open(os.path.join(args.annotation_dir,ann)),dtype=np.int64)
       
         sam_regions = image_id_to_sam[ann.replace('.png','')]
         for region in sam_regions:
@@ -93,7 +93,7 @@ if __name__ == '__main__':
         help="Location to store ground truth of label regions",
     )
     parser.add_argument(
-        "--annotation_location",
+        "--annotation_dir",
         type=str,
         default=None,
         help="Location of per-pixel annotations",

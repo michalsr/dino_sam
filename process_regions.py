@@ -63,12 +63,6 @@ if __name__ == '__main__':
         default="/shared/rsaas/dino_sam"
     )
     parser.add_argument(
-        "--image_dir",
-        type=str,
-        default=None,
-        help="Location of jpg files",
-    )
-    parser.add_argument(
         "--feature_dir",
         type=str,
         default=None,

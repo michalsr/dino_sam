@@ -93,13 +93,16 @@ def train_and_evaluate(args):
         val_data = load_features(args,'val')
     else:
         val_data = utils.open_file(val_file)
+    if args.start_class ==-1 or args.last_class == -1:
+        class_ids = np.unique(train_data['label'])
+        min_class = class_ids[0]
+        max_class = class_ids[-1]
+    else:
+        min_class = args.start_class 
+        max_class = args.last_class 
 
-    class_ids = np.unique(train_data['label'])
-    min_class = class_ids[0]
-    max_class = class_ids[-1]
-
-    if class_ids[0] == 0 and args.ignore_zero:
-        min_class = class_ids[1]
+    if min_class == 0 and args.ignore_zero:
+        min_class = 1
 
     avg_ap = []
     avg_roc_auc = []
@@ -174,5 +177,18 @@ if __name__ == '__main__':
         action="store_true",
         help="No classifier training"
     )
+    parser.add_argument(
+        "--start_class",
+        type=int,
+        default=-1,
+        help="Train classifier starting from this class"
+    )
+    parser.add_argument(
+        "--last_class",
+        type=int,
+        default=-1,
+        help="Stop classifier at this class"
+    )
+
     args = parser.parse_args()
     train_and_evaluate(args)
