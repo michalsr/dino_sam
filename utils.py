@@ -9,7 +9,7 @@ from tqdm import tqdm
 import math
 import torch
 import warnings
-
+import stat 
 def save_file(filename,data,json_numpy=False):
     """
     Based on https://github.com/salesforce/LAVIS/blob/main/lavis/common/utils.py
@@ -39,6 +39,9 @@ def save_file(filename,data,json_numpy=False):
         # assume file is pickle
          with open(filename, "wb+") as fopen:
             pickle.dump(data, fopen)
+    # give everybody read,write,execute
+    # not secure but should be ok 
+    os.chmod(filename,stat.S_IRWXO)
 
 
 def open_file(filename):
