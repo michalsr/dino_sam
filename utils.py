@@ -20,7 +20,7 @@ def save_file(filename,data,json_numpy=False):
     parent_dir = os.path.dirname(filename)
     if not os.path.exists(parent_dir):
         os.makedirs(parent_dir)
-    Path(filename).chmod(0o0777)
+    Path(parent_dir).chmod(0o0777)
     file_ext = os.path.splitext(filename)[1]       
     if file_ext == ".npy":
         with open(filename, "wb+") as fopen:

@@ -17,6 +17,7 @@ import utils
 import torch.nn.functional as F
 from pathlib import Path
 import clip
+from dense_clip import DenseCLIP
 
 """
 For extraction features for a given dataset and model. 
@@ -126,6 +127,13 @@ def extract_clip(args, model, image, preprocess=None):
         return None
 
 
+def extract_dense_clip(args, model, image):
+    with torch.no_grad():
+        feature = model(image)
+
+    return feature.detach().cpu().to(torch.float32).numpy()[None]
+
+
 def extract_features(model, args, preprocess=None):
     all_image_files = [f for f in os.listdir(args.image_dir) if os.path.isfile(os.path.join(args.image_dir, f))]
     Path(args.feature_dir).mkdir(parents=True, exist_ok=True)
@@ -150,8 +158,11 @@ def extract_features(model, args, preprocess=None):
             else:  # dinov1
                 features = extract_dino_v1(args, model, image)
 
-        elif 'clip' in args.model:
+        elif args.model == 'clip':
             features = extract_clip(args, model, image, preprocess)
+        
+        elif args.model == 'dense_clip':
+            features = extract_dense_clip(args, model, image)
 
         utils.save_file(os.path.join(args.feature_dir, image_name.replace(filename_extension, ".pkl")), features)
 
@@ -194,7 +205,7 @@ if __name__ == '__main__':
         "--model",
         type=str,
         default='dinov2_vitl14',
-        choices=['dinov2_vitl14', 'dino_vitb8', 'clip'],  
+        choices=['dinov2_vitl14', 'dino_vitb8', 'clip', 'dense_clip'],  
         help="Name of model from repo"
     )
 
@@ -213,15 +224,15 @@ if __name__ == '__main__':
         "--multiple",
         type=int,
         default=14,
-        help="The patch length of the model"
+        help="The patch length of the model. Use 14 for DINOv2, 8 for DINOv1, 32 for CLIP, 14 for DenseCLIP (automatically handled in the package)"
     )
     parser.add_argument(
         "--dtype",
         type=str,
         default='fp16',
         choices=['fp16', 'fp32'],
-        help="Which mixed precision to use"
-    )## use fp32 for clip
+        help="Which mixed precision to use. Use fp32 for clip and dense_clip"
+    )
 
     args = parser.parse_args()
 
@@ -237,6 +248,8 @@ if __name__ == '__main__':
 
     if args.model == 'clip':
         model, preprocess = clip.load(args.clip_model, device=device)
+    elif args.model == 'dense_clip':
+        model = DenseCLIP('ViT-L/14@336px').to(device)
     else:
         model = torch.hub.load(f'{args.model_repo_name}', f'{args.model}')
 
