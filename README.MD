@@ -4,7 +4,8 @@
 - Label regions: `label_regions.py`
 - Get features per region: `process_regions.py`
 - Train and evaluate binary classifier: `train_classifier.py`
-- Make region predictions and convert to per-pixel predictions: `per_pixel_prediction.py`
+- Get region, per-pixel predictions and evaluate: `per_pixel_pred_eval.py`
+- Make region predictions and convert to per-pixel predictions (slow): `per_pixel_prediction.py`
 - Get mIOU: `per_pixel_eval.py`
 # Installation
 - `python>=3.9`
