@@ -8,6 +8,8 @@ import scipy
 from tqdm import tqdm
 from utils import mean_iou
 from PIL import Image 
+import warnings
+warnings.filterwarnings("ignore")
 def per_pixel_prediction(args):
     all_pixel_predictions = []
     # keep track of oroder of predictions 

@@ -18,19 +18,20 @@ def format_predictions(args):
             # load predicted 
             preds = utils.open_file(os.path.join(args.pixel_pred_dir,f))
             actual = np.array(Image.open(os.path.join(args.annotation_dir,f.replace('.pkl','.png'))))
+            actual_labels.append(actual)
             # load actual
             preds_reshape = np.zeros((actual.shape[0],actual.shape[1]))
-            actual_shape = np.zeros((actual.shape[0],actual.shape[1]))
+      
     
         
             for (x,y),v in preds.items():
             
                 preds_reshape[x,y] = v
-                actual_shape[x,y] = actual[x,y]
+       
             
             # add both 
             predicted_labels.append(preds_reshape)
-            actual_labels.append(actual_shape)
+ 
     return predicted_labels,actual_labels
 
 def get_mean_iou(args,actual_labels,pred_labels):

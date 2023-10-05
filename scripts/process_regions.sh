@@ -1,2 +1,3 @@
 #!/bin/bash
-python process_regions.py  --feature_dir /shared/rsaas/dino_sam/features/dinov2/ADE20K/val --sam_dir /shared/rsaas/dino_sam/sam_output/ADE20K/val --region_feature_dir /shared/rsaas/dino_sam/region_features/dinov2/ADE20K/val
+python process_regions.py  --feature_dir /shared/rsaas/dino_sam/features/dinov1/pascal_voc_layer_11/train --sam_dir /shared/rsaas/dino_sam/sam_output/pascal_voc/train --region_feature_dir /shared/rsaas/dino_sam/region_features/dinov1/pascal_voc_layer_11/train
+python process_regions.py  --feature_dir /shared/rsaas/dino_sam/features/dinov1/pascal_voc_layer_11/val --sam_dir /shared/rsaas/dino_sam/sam_output/pascal_voc/val --region_feature_dir /shared/rsaas/dino_sam/region_features/dinov1/pascal_voc_layer_11/val
