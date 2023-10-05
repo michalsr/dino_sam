@@ -1,25 +1,42 @@
 import torch 
 import pickle
 import os 
+import sys
 import numpy as np
 import json 
 from tqdm import tqdm
 from pycocotools import mask as mask_utils
-import torch  
 from PIL import Image 
 import torchvision.transforms as T
 import itertools
 import math 
-import os
 import argparse
 import gc 
 from torch.profiler import profile, record_function, ProfilerActivity
 import utils 
 import torch.nn.functional as F
 from pathlib import Path
+import clip
+
 """
 For extraction features for a given dataset and model. 
 """
+
+class FeatureExtractorHook:
+    def __init__(self):
+        self.features = None
+
+    def hook_fn(self, module, input, output):
+        self.features = output
+
+    def clear(self):
+        self.features = None
+
+def register_hook(model):
+    extractor_hook = FeatureExtractorHook()
+    hook = model.visual.transformer.register_forward_hook(extractor_hook.hook_fn)
+    return hook, extractor_hook
+
 class CenterPadding(torch.nn.Module):
     def __init__(self, multiple = 14):
         super().__init__()
@@ -84,42 +101,59 @@ def extract_dino_v2(args,model,image):
         features = torch.cat(features_out, dim=1) # B, C, H, W 
     return features.detach().cpu().to(torch.float32).numpy()
 
+def extract_clip(args, model, image, preprocess=None):
+    padding_module = CenterPadding(multiple=args.multiple)
+    image_input = preprocess(image).unsqueeze(0).to(device=args.device)
+    image_input_padded = padding_module(image_input)
 
-def extract_features(model,args):
+    hook, extractor_hook = register_hook(model)  # Register the hook
+
+    with torch.no_grad():
+        model.encode_image(image_input_padded)
+
+    hook.remove()  # Remove the hook after use to prevent memory leaks
+
+    if extractor_hook.features is not None:
+        features = extractor_hook.features.permute(1, 0, 2)
+        sliced_features = features[:, 1:, :]
+
+        ln_post = model.visual.ln_post
+        final_features = ln_post(sliced_features)
+
+        return final_features.detach().cpu().to(torch.float32).numpy()
+    else:
+        raise Exception("Failed to capture features.")
+        return None
+
+
+def extract_features(model, args, preprocess=None):
     all_image_files = [f for f in os.listdir(args.image_dir) if os.path.isfile(os.path.join(args.image_dir, f))]
-    
-    # Create folder 
     Path(args.feature_dir).mkdir(parents=True, exist_ok=True)
 
-   
     print("Using center padding")
-  
-    model = model.to(device='cuda',dtype=args.dtype)
+
+    model = model.to(device='cuda', dtype=args.dtype)
     model.eval()
 
-
-    for i,f in enumerate(tqdm(all_image_files,desc='Extract',total=len(all_image_files))):
-        image_name = f 
-
-        filename_extension = os.path.splitext(image_name)[1]  
+    for i, f in enumerate(tqdm(all_image_files, desc='Extract', total=len(all_image_files))):
+        image_name = f
+        filename_extension = os.path.splitext(image_name)[1]
         try:
-            image = Image.open(os.path.join(args.image_dir,f)).convert('RGB')
+            image = Image.open(os.path.join(args.image_dir, f)).convert('RGB')
         except:
             print(f'Could not read image {f}')
-            continue 
+            continue
 
-        #print(torch.cuda.memory_summary(),'before')
         if 'dino' in args.model:
             if 'dinov2' in args.model:
-    
-                features = extract_dino_v2(args,model,image)
-            else: # dinov1
-                features = extract_dino_v1(args,model,image)
-        utils.save_file(os.path.join(args.feature_dir,image_name.replace(filename_extension,".pkl")),features)
+                features = extract_dino_v2(args, model, image)
+            else:  # dinov1
+                features = extract_dino_v1(args, model, image)
 
-           
+        elif 'clip' in args.model:
+            features = extract_clip(args, model, image, preprocess)
 
-
+        utils.save_file(os.path.join(args.feature_dir, image_name.replace(filename_extension, ".pkl")), features)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -147,13 +181,23 @@ if __name__ == '__main__':
         choices=['facebookresearch/dinov2','facebookresearch/dino:main'],
         help="PyTorch model name for downloading from PyTorch hub"
     )
+
+    parser.add_argument(
+        "--clip_model",
+        type=str,
+        default="ViT-B/32",
+        choices=["ViT-B/32", "ViT-B/16", "ViT-L/14", "RN50", "RN101", "RN50x4", "RN50x16", "RN50x64", "ViT-L/14@336px"],
+        help="CLIP base model version"
+    )
+
     parser.add_argument(
         "--model",
         type=str,
         default='dinov2_vitl14',
-        choices=['dinov2_vitl14','dino_vitb8'],
+        choices=['dinov2_vitl14', 'dino_vitb8', 'clip'],  
         help="Name of model from repo"
     )
+
     parser.add_argument(
         "--layers",
         type=str,
@@ -175,14 +219,30 @@ if __name__ == '__main__':
         "--dtype",
         type=str,
         default='fp16',
+        choices=['fp16', 'fp32'],
         help="Which mixed precision to use"
-    )
-    
+    )## use fp32 for clip
+
     args = parser.parse_args()
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    args.device = device  
+
     if args.dtype == "fp16":
-        args.dtype = torch.half 
+      args.dtype = torch.half
+    elif args.dtype == "fp32":
+      args.dtype = torch.float ## this change is needed for CLIP model
+    else: 
+      args.dtype = torch.bfloat16
+
+    if args.model == 'clip':
+        model, preprocess = clip.load(args.clip_model, device=device)
     else:
-        # can't use on non-Ampere machines
-        args.dtype = torch.bfloat16
-    model = torch.hub.load(f'{args.model_repo_name}',f'{args.model}')
-    extract_features(model,args)
+        model = torch.hub.load(f'{args.model_repo_name}', f'{args.model}')
+
+    model = model.to(device=args.device, dtype=args.dtype)  
+
+    if args.model == 'clip':
+        extract_features(model, args, preprocess) 
+    else:
+        extract_features(model, args)
