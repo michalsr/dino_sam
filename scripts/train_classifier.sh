@@ -1,0 +1,2 @@
+#!/bin/bash
+python train_classifier.py --train_region_labels_dir /shared/rsaas/dino_sam/region_labels/ADE20K/train --val_region_labels_dir /shared/rsaas/dino_sam/region_labels/ADE20K/val --train_region_feature_dir /shared/rsaas/dino_sam/region_features/dinov2/ADE20K/train --val_region_feature_dir /shared/rsaas/dino_sam/region_features/dinov2/ADE20K/val --classifier_dir /shared/rsaas/dino_sam/classifiers/dinov2/ADE20K --results_dir /shared/rsaas/dino_sam/binary_classifier_results/dinov2/ADE20K --start_class 0 --end_class 2

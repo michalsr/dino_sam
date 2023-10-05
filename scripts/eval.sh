@@ -1,0 +1,2 @@
+#!/bin/bash
+python per_pixel_eval.py --pixel_pred_dir /shared/rsaas/dino_sam/pixel_pred/dinov2/pascal_voc_layer_23 --num_classes 20 --annotation_dir /shared/rsaas/dino_sam/data/VOCdevkit/VOC2012/segmentation_annotation/val --result_dir /shared/rsaas/dino_sam/iou_results/dinov2/pascal_voc_layer_23 

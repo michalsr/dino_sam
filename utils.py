@@ -5,6 +5,7 @@ from typing import Dict, Optional
 import yaml 
 import json
 import numpy as np
+from pathlib import Path
 from tqdm import tqdm
 import math
 import torch
@@ -41,7 +42,8 @@ def save_file(filename,data,json_numpy=False):
             pickle.dump(data, fopen)
     # give everybody read,write,execute
     # not secure but should be ok 
-    os.chmod(filename,stat.S_IRWXO)
+    Path(filename).chmod(0o0777)
+ 
 
 
 def open_file(filename):
