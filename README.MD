@@ -16,4 +16,4 @@
 - Checkpoints: `/shared/rsaas/dino_sam/checkpoints`
 
 ## Dense_clip description:
-- Run `python -m pip install git+http://github.com/yuqunw/DenseCLIP` before running dense clip feature extraction.
+- Run `python -m pip install git+http://github.com/yuqunw/DenseCLIP` (changed from Jae's repo) before running dense clip feature extraction.
