@@ -7,16 +7,88 @@ import copy
 import cv2 
 from typing import Any, Dict, List
 import argparse 
+
+def load_sam_modules(args):
+    checkpoint_basename = os.path.basename(args.checkpoint).lower()
+
+    if args.use_hq and args.use_mobile:
+        raise ValueError("Cannot have both --use-hq and --use-mobile")
+
+    if args.use_hq:
+        try:
+            from segment_anything_hq import sam_model_registry, SamAutomaticMaskGenerator
+
+        except ImportError as e:
+            print(e)
+            raise ImportError(
+                "If segment_anything_hq is not installed, please install it via: pip install segment-anything-hq"
+            )
+
+        if args.model_type == 'vit_t':
+            args.model_type = 'vit_tiny' # SAM-HQ calls it 'vit_tiny' instead of 'vit_t'
+
+        # Verify that 'sam_hq_vit' is in the checkpoint name
+        if not "sam_hq_vit" in checkpoint_basename:
+            raise ValueError(
+                f"Expected 'sam_hq_vit' in checkpoint name '{checkpoint_basename}'\n"
+                + f"Please ensure that the checkpoint is downloaded from: https://github.com/SysCV/sam-hq#model-checkpoints"
+            )
+
+    elif args.use_mobile:
+        try:
+            from mobile_sam import sam_model_registry, SamAutomaticMaskGenerator
+
+        except ImportError as e:
+            print(e)
+            raise ImportError(
+                "If mobile_sam is not installed, please install it via: pip install git+https://github.com/ChaoningZhang/MobileSAM.git"
+            )
+
+        # Verify that 'mobile_sam' is in the checkpoint name
+        if not "mobile_sam" in checkpoint_basename:
+            raise ValueError(
+                f"Expected 'mobile_sam' in checkpoint name '{checkpoint_basename}'\n"
+                + f"Please ensure that the checkpoint is downloaded from: https://github.com/ChaoningZhang/MobileSAM/raw/master/weights/mobile_sam.pt"
+            )
+
+        if not args.model_type == "vit_t":
+            print("WARNING: Mobile-SAM uses the 'vit_t' model type; setting --model-type to 'vit_t")
+            args.model_type = "vit_t"
+
+    else: # Default SAM model
+        try:
+            from segment_anything import sam_model_registry, SamAutomaticMaskGenerator
+
+        except ImportError as e:
+            print(e)
+            raise ImportError(
+                "If segment_anything is not installed, please install it via: pip install git+https://github.com/facebookresearch/segment-anything.git"
+            )
+
+        # Verify that 'sam_vit' is in the checkpoint name
+        if not "sam_vit" in checkpoint_basename:
+            raise ValueError(
+                f"Expected 'sam_vit' in checkpoint name '{checkpoint_basename}'\n"
+                + f"Please ensure that the checkpoint is downloaded from: https://github.com/facebookresearch/segment-anything"
+            )
+
+        if args.model_type == "vit_t":
+            raise ValueError(
+                "The default SAM library does not support the 'vit_t' model type. "
+                + "Please use --use-hq or --use-mobile to use a different model."
+            )
+
+    return sam_model_registry, SamAutomaticMaskGenerator
+
 def get_sam_regions(args):
     # basically copy of  segment-anything/scripts/amg.py
-    os.chdir(os.path.join(args.main_dir,'segment-anything'))
-
-    from segment_anything import SamAutomaticMaskGenerator, sam_model_registry
+    sam_model_registry, SamAutomaticMaskGeneratorCls = load_sam_modules(args)
     sam = sam_model_registry[args.model_type](checkpoint=args.checkpoint)
-    _ = sam.to(device=args.device)
+    sam.to(device=args.device)
+
     output_mode = "coco_rle" if args.convert_to_rle else "binary_mask"
     amg_kwargs = get_amg_kwargs(args)
-    generator = SamAutomaticMaskGenerator(sam, output_mode=output_mode, **amg_kwargs)
+    generator = SamAutomaticMaskGeneratorCls(sam, output_mode=output_mode, **amg_kwargs)
 
     if not os.path.isdir(args.input):
         targets = [args.input]
@@ -48,28 +120,23 @@ def get_sam_regions(args):
             save_file = save_base + ".json"
             with open(save_file, "w") as f:
                 json.dump(masks, f)
+
+    if args.convert_to_rle:
+        # add region ids 
+        sam_files = os.listdir(args.output)
+        for f in sam_files:
+            new_sam_regions = []
+            all_regions = utils.open_json_file(os.path.join(args.output,f))
+            for i,region in enumerate(all_regions):
+                image_id = f.replace('.json','')
+                region_id = f'{image_id}_region_{i}'
+                new_region = copy.deepcopy(region)
+                new_region['region_id'] = region_id 
+                new_sam_regions.append(new_region)
+
+            utils.save_file(os.path.join(args.output, f), new_sam_regions)
+
     print("Done!")
-    # add region ids 
-    sam_files = os.listdir(args.output)
-    for f in sam_files:
-        new_sam_regions = []
-        all_regions = utils.open_json_file(args.output,f)
-        for i,region in enumerate(all_regions):
-            image_id = f.replace('.json','')
-            region_id = f'{image_id}_region_{i}'
-            new_region = copy.deepcopy(region)
-            new_region['region_id'] = region_id 
-            new_sam_regions.append(new_region)
-        utils.save_file(args.output,f)
-    os.chdir(args.main_dir)
-
-
-
-
-
-
-
-
 
 def write_masks_to_folder(masks: List[Dict[str, Any]], path: str) -> None:
     header = "id,area,bbox_x0,bbox_y0,bbox_w,bbox_h,point_input_x,point_input_y,predicted_iou,stability_score,crop_box_x0,crop_box_y0,crop_box_w,crop_box_h"  # noqa
@@ -95,7 +162,6 @@ def write_masks_to_folder(masks: List[Dict[str, Any]], path: str) -> None:
 
     return
 
-
 def get_amg_kwargs(args):
     amg_kwargs = {
         "points_per_side": args.points_per_side,
@@ -116,8 +182,6 @@ def get_amg_kwargs(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
 
-
-    parser.add_argument("--main_dir",default="/shared/rsaas/dino_sam")
     #sam regions 
     parser.add_argument(
     "--input",
@@ -136,18 +200,29 @@ if __name__ == '__main__':
     ))
 
     parser.add_argument(
+        "--use-hq",
+        action="store_true",
+        help="Use HQ-SAM model for segmentation."
+    )
+
+    parser.add_argument(
+        "--use-mobile",
+        action="store_true",
+        help="Use Mobile-SAM model for segmentation."
+    )
+
+    parser.add_argument(
         "--model-type",
         type=str,
         default='vit_l',
-       
-        help="The type of model to load, in ['default', 'vit_h', 'vit_l', 'vit_b']",
+        choices=["default", "vit_h", "vit_l", "vit_b", "vit_t"],
+        help="The type of model to load, in ['default', 'vit_h', 'vit_l', 'vit_b', 'vit_t']. ",
     )
 
     parser.add_argument(
         "--checkpoint",
         type=str,
         default=None,
-     
         help="The path to the SAM checkpoint to use for mask generation.",
     )
 
