@@ -75,13 +75,16 @@ def extract_dino_v1(args,model,image):
         # intermediate layers does not use a norm or go through the very last layer of output
         img = transform(image).to(device='cuda',dtype=args.dtype)
         features_out = model.get_intermediate_layers(img, n=layers)
+        features_out = [f.detach().cpu() for f in features_out]
+        
+        img = img.cpu()
         features = [f[:, 1:] for f in features_out] # Remove the cls tokens
         features = torch.cat(features, dim=-1) # B, H * W, C
         B, _, C= features.size()
         W, H = image.size
         patch_H, patch_W = math.ceil(H / args.multiple), math.ceil(W / args.multiple)
         features = features.permute(0, 2, 1).view(B, C, patch_H, patch_W) 
-    return features.detach().cpu().to(torch.float32).numpy()
+    return features.to(torch.float32).numpy()
 
 def extract_dino_v2(args,model,image):
     layers = eval(args.layers)
@@ -205,7 +208,7 @@ if __name__ == '__main__':
         "--model",
         type=str,
         default='dinov2_vitl14',
-        choices=['dinov2_vitl14', 'dino_vitb8', 'clip', 'dense_clip'],  
+        choices=['dinov2_vitl14', 'dino_vitb8', 'clip','dino_vitb16','dense_clip'],  
         help="Name of model from repo"
     )
 

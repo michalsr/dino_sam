@@ -14,13 +14,3 @@ if [ ! -f "$filePath/attribute_index.json" ]; then
 fi 
 if [ ! -f "$filePath/attribute_parent_types.json" ]; then 
     wget https://raw.githubusercontent.com/adobe-research/vaw_dataset/main/data/attribute_parent_types.json
-fi 
-if [ ! -f "$filePath/head_tail.json" ]; then
-    wget https://raw.githubusercontent.com/adobe-research/vaw_dataset/main/data/head_tail.json
-fi 
-if [ ! -f "$filePath/test.json" ]; then
-    wget https://raw.githubusercontent.com/adobe-research/vaw_dataset/main/data/test.json
-fi 
-if [ ! -f "$filePath/val.json" ]; then
-    wget https://raw.githubusercontent.com/adobe-research/vaw_dataset/main/data/val.json
-fi 
