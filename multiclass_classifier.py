@@ -89,6 +89,130 @@ def train_and_evaluate(args):
     acc = evaluate_classifier(args)
     utils.save_file(os.path.join(args.results_dir,'acc.json'), acc)
 
+class CustomDataset(Dataset):
+    def __init__(self, feature, label):
+        self.feature = feature
+        self.label = label
+        self.num_classes = torch.unique(label).shape[0]
+        
+    def __len__(self):
+        return len(self.feature)
+
+    def __getitem__(self, idx):
+        return self.feature[idx], self.label[idx]
+
+class CustomLogisticRegression(torch.nn.Module):
+    def __init__(self, input_dim, output_dim):
+        super(CustomLogisticRegression, self).__init__()
+        self.linear = torch.nn.Linear(input_dim, output_dim)
+        
+    def forward(self, x):
+        outputs = torch.sigmoid(self.linear(x))
+        return outputs
+    
+def custom_loss(pred, target):
+    pred_ignore_zero = pred[:, 1:]
+    exp_pred = torch.exp(pred_ignore_zero)
+    target_ignore_zero = target-1
+    
+    loss = 0
+    for i in range(target.shape[0]):
+        if target[i].item() != 0:
+            loss += -torch.log(exp_pred[i][target_ignore_zero[i]]/torch.sum(exp_pred[i]))
+            loss += -torch.log(1/(1+torch.sum(exp_pred[i][exp_pred[i]!=exp_pred[i][target_ignore_zero[i]]])))
+        else:
+            loss += -torch.log(1/(1+torch.sum(exp_pred[i])))
+    return loss
+
+    
+def train_eval_classifier(args):
+    file = os.path.join(args.classifier_dir, 'train.pkl')
+    train_data = utils.open_file(file)
+    target_label = train_data['label']
+    train_feature = torch.from_numpy(train_data['feature'])
+    train_label = torch.from_numpy(train_data['label'])
+    
+    file = os.path.join(args.classifier_dir, 'val.pkl')
+    val_data = utils.open_file(file)
+    target_label = val_data['label']
+    val_feature = torch.from_numpy(val_data['feature'])
+
+    val_label = torch.from_numpy(val_data['label'])
+    
+    model = CustomLogisticRegression(input_dim=train_feature.shape[1], output_dim=np.unique(train_data['label']).shape[0])
+    criterion = torch.nn.CrossEntropyLoss()
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
+    
+    epochs = 20
+    batach_size = 32
+    
+    train_loss = []
+    val_loss = []
+    train_dataset = CustomDataset(train_feature, train_label)
+    train_loader = DataLoader(dataset=train_dataset, batch_size=32, shuffle=True)
+    
+    val_dataset = CustomDataset(val_feature, val_label)
+    val_loader = DataLoader(dataset=val_dataset, batch_size=32, shuffle=False)
+    
+    for epoch in tqdm(range(epochs)):
+        loss1, loss2 = 0, 0
+        for i, (features, labels) in enumerate(train_loader):
+            optimizer.zero_grad()
+            outputs = model(features)
+            loss_train = custom_loss(outputs, labels)
+            loss_train.backward()
+            optimizer.step()
+            loss1 += loss_train.item()
+        
+        train_loss.append(loss1/len(train_loader))
+        
+        for i, (features, labels) in enumerate(val_loader):
+            outputs = model(features)
+            loss_eval = custom_loss(outputs, labels)
+            loss2 += loss_eval.item()
+            
+        val_loss.append(loss2/len(val_loader))
+        
+        torch.save({
+            'epoch': epoch,
+            'model_state_dict': model.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict(),
+            'loss': loss_train,
+            }, os.path.join(args.classifier_dir, 'model.pt'))
+    
+    return model, val_loader
+
+def calculate_accuracy(model, loader, size):
+    correct = 0
+    model.eval()
+    for X, y in loader:
+        pred = torch.argmax(model(X), dim=1)
+        equal = torch.sum(torch.eq(pred, y))
+        correct += equal
+    return correct/size
+
+def train_and_evaluate_other(args):
+    device = "cuda" if torch.cuda.is_available() else 'cpu'
+    
+    training_file = os.path.join(args.classifier_dir,'train.pkl')
+    val_file = os.path.join(args.classifier_dir,'val.pkl')
+    # root_feature, root_label, save_root,
+    if not os.path.exists(training_file):
+        train_data = load_features(args,'train')
+    else:
+        train_data = utils.open_file(training_file)
+    
+    if not os.path.exists(val_file):
+        val_data = load_features(args,'val')
+    else:
+        val_data = utils.open_file(val_file)
+        
+    if not args.eval_only:
+        model, val_loader = train_eval_classifier(args)
+        acc = calculate_accuracy(model, val_loader, val_data['feature'].shape[0])
+    
+    return acc
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument(
