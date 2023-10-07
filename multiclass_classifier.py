@@ -130,6 +130,8 @@ def custom_loss(pred, target):
 
     
 def train_eval_classifier(args):
+    device = "cuda" if torch.cuda.is_available() else 'cpu'
+    
     file = os.path.join(args.classifier_dir, 'train.pkl')
     train_data = utils.open_file(file)
     target_label = train_data['label']
@@ -150,19 +152,20 @@ def train_eval_classifier(args):
         output_dim = np.unique(train_data['label']).shape[0]
     
     model = CustomLogisticRegression(input_dim=input_dim, output_dim=output_dim)
+    model.to(device)
     criterion = torch.nn.CrossEntropyLoss()
-    optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=args.learning_rate)
     
-    epochs = 20
-    batch_size = 32
+    epochs = args.epoch
+    batch_size = args.batch_size
     
     train_loss = []
     val_loss = []
     train_dataset = CustomDataset(train_feature, train_label)
-    train_loader = DataLoader(dataset=train_dataset, batch_size=32, shuffle=True)
+    train_loader = DataLoader(dataset=train_dataset, batch_size=batch_size, shuffle=True)
     
     val_dataset = CustomDataset(val_feature, val_label)
-    val_loader = DataLoader(dataset=val_dataset, batch_size=32, shuffle=False)
+    val_loader = DataLoader(dataset=val_dataset, batch_size=batch_size, shuffle=False)
     
     for epoch in tqdm(range(epochs)):
         loss1, loss2 = 0, 0
@@ -225,8 +228,8 @@ def train_and_evaluate_other(args):
         
     if not args.eval_only:
         model, val_loader = train_eval_classifier(args)
-        acc = calculate_accuracy(model, val_loader, val_data['feature'].shape[0])
-    
+        acc = calculate_accuracy(model, val_loader, val_data['feature'].shape[0]).item()
+        utils.save_file(os.path.join(args.results_dir,'acc.json'), acc)
     return acc
 
 if __name__ == '__main__':
@@ -280,6 +283,29 @@ if __name__ == '__main__':
             "--eval_only",
             action="store_true",
             help="No classifier training"
+        )
+    parser.add_argument(
+        "--with_background_class",
+        action="store_true",
+        help="Dataset contains background or not"
+    )
+    parser.add_argument(
+            "--epoch",
+            type = int,
+            default=200,
+            help="Number of training epoch"
+        )
+    parser.add_argument(
+            "--batch_size",
+            type = int,
+            default=32,
+            help="Batch size"
+        )
+    parser.add_argument(
+            "--learning_rate",
+            type = int,
+            default=0.001,
+            help="Batch size"
         )
     args, unknown = parser.parse_known_args()
     train_and_evaluate_other(args)
