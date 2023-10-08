@@ -135,15 +135,15 @@ def train_eval_classifier(args):
     file = os.path.join(args.classifier_dir, 'train.pkl')
     train_data = utils.open_file(file)
     target_label = train_data['label']
-    train_feature = torch.from_numpy(train_data['feature'])
-    train_label = torch.from_numpy(train_data['label'])
+    train_feature = torch.from_numpy(train_data['feature']).to(device)
+    train_label = torch.from_numpy(train_data['label']).to(device)
     
     file = os.path.join(args.classifier_dir, 'val.pkl')
     val_data = utils.open_file(file)
     target_label = val_data['label']
-    val_feature = torch.from_numpy(val_data['feature'])
+    val_feature = torch.from_numpy(val_data['feature']).to(device)
 
-    val_label = torch.from_numpy(val_data['label'])
+    val_label = torch.from_numpy(val_data['label']).to(device)
     
     input_dim = train_feature.shape[1]
     if args.with_background_class:
@@ -203,12 +203,26 @@ def calculate_accuracy(model, loader, size):
         output_exp = torch.exp(output)
         exp_sum = torch.sum(output_exp, axis=1)
         pred = torch.div(output_exp.T, (exp_sum+1)).T
-        pred_max, pred_indices = torch.max(output, dim=1)
+        pred_max, pred_indices = torch.max(pred, dim=1)
         other = 1/(exp_sum+1)
         pred_final = torch.where(pred_max>other, pred_indices+1, 0) 
         equal = torch.sum(torch.eq(y, pred_final))
         correct += equal
     return correct/size
+
+def pred_matrix(model, features, num_classes):
+    # feature is a numpy array here
+    torch_features = torch.from_numpy(features)
+    
+    model.eval()
+    output = model(features)
+    output_exp = torch.exp(output)
+    exp_sum = torch.sum(output_exp, axis=1)
+    pred = torch.div(output_exp.T, (exp_sum+1)).T
+    other = 1/(exp_sum+1)
+    
+    result = torch.cat(pred, other, axis = 1)
+    return result.detach().cpu().numpy()
 
 def train_and_evaluate_other(args):
     device = "cuda" if torch.cuda.is_available() else 'cpu'
@@ -308,4 +322,5 @@ if __name__ == '__main__':
             help="Batch size"
         )
     args, unknown = parser.parse_known_args()
+    # train_and_evaluate(args)
     train_and_evaluate_other(args)
