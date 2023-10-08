@@ -203,14 +203,26 @@ def calculate_accuracy(model, loader, size):
         output_exp = torch.exp(output)
         exp_sum = torch.sum(output_exp, axis=1)
         pred = torch.div(output_exp.T, (exp_sum+1)).T
-        pred_max, pred_indices = torch.max(output, dim=1)
+        pred_max, pred_indices = torch.max(pred, dim=1)
         other = 1/(exp_sum+1)
         pred_final = torch.where(pred_max>other, pred_indices+1, 0) 
         equal = torch.sum(torch.eq(y, pred_final))
         correct += equal
     return correct/size
 
-
+def pred_matrix(model, features, num_classes):
+    # feature is a numpy array here
+    torch_features = torch.from_numpy(features)
+    
+    model.eval()
+    output = model(features)
+    output_exp = torch.exp(output)
+    exp_sum = torch.sum(output_exp, axis=1)
+    pred = torch.div(output_exp.T, (exp_sum+1)).T
+    other = 1/(exp_sum+1)
+    
+    result = torch.cat(pred, other, axis = 1)
+    return result.detach().cpu().numpy()
 
 def train_and_evaluate_other(args):
     device = "cuda" if torch.cuda.is_available() else 'cpu'
