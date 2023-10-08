@@ -1,6 +1,8 @@
 import gc
 import os
-import utils 
+import tqdm
+import utils
+import torch
 import pickle
 import argparse 
 import numpy as np
@@ -9,6 +11,8 @@ from tqdm import tqdm
 from sklearn.metrics import roc_auc_score
 from sklearn.metrics import average_precision_score
 from sklearn.linear_model import LogisticRegression
+from torch.utils.data import DataLoader
+from torch.utils.data import Dataset
 """
 Train and eval multiclass classifiers with 'other' label
 """
@@ -64,7 +68,7 @@ def train_classifier(args):
     train_data = utils.open_file(file)
     target_label = train_data['label']
     classifier = LogisticRegression(verbose=1, multi_class='multinomial', max_iter=args.iterations).fit(train_data['feature'],
-                                                                                 target_label,
+                                                                                                        target_label,
                                                                                     sample_weight=train_data['weight'])
     save_dir = os.path.join(args.classifier_dir,f'model_multiclass.sav')
     utils.save_file(save_dir,classifier)
@@ -111,21 +115,23 @@ class CustomLogisticRegression(torch.nn.Module):
         return outputs
     
 def custom_loss(pred, target):
-    pred_ignore_zero = pred[:, 1:]
-    exp_pred = torch.exp(pred_ignore_zero)
+    # pred_ignore_zero = pred[:, 1:]
+    exp_pred = torch.exp(pred)
     target_ignore_zero = target-1
     
     loss = 0
     for i in range(target.shape[0]):
         if target[i].item() != 0:
-            loss += -torch.log(exp_pred[i][target_ignore_zero[i]]/torch.sum(exp_pred[i]))
-            loss += -torch.log(1/(1+torch.sum(exp_pred[i][exp_pred[i]!=exp_pred[i][target_ignore_zero[i]]])))
+            loss += -torch.log(exp_pred[i][target_ignore_zero[i]]/torch.sum(exp_pred[i])+1)
+            # loss += -torch.log(1/(1+torch.sum(exp_pred[i][exp_pred[i]!=exp_pred[i][target_ignore_zero[i]]])))
         else:
             loss += -torch.log(1/(1+torch.sum(exp_pred[i])))
     return loss
 
     
 def train_eval_classifier(args):
+    device = "cuda" if torch.cuda.is_available() else 'cpu'
+    
     file = os.path.join(args.classifier_dir, 'train.pkl')
     train_data = utils.open_file(file)
     target_label = train_data['label']
@@ -139,20 +145,27 @@ def train_eval_classifier(args):
 
     val_label = torch.from_numpy(val_data['label'])
     
-    model = CustomLogisticRegression(input_dim=train_feature.shape[1], output_dim=np.unique(train_data['label']).shape[0])
-    criterion = torch.nn.CrossEntropyLoss()
-    optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
+    input_dim = train_feature.shape[1]
+    if args.with_background_class:
+        output_dim = np.unique(train_data['label']).shape[0]-1
+    else:
+        output_dim = np.unique(train_data['label']).shape[0]
     
-    epochs = 20
-    batach_size = 32
+    model = CustomLogisticRegression(input_dim=input_dim, output_dim=output_dim)
+    model.to(device)
+    criterion = torch.nn.CrossEntropyLoss()
+    optimizer = torch.optim.AdamW(model.parameters(), lr=args.learning_rate)
+    
+    epochs = args.epoch
+    batch_size = args.batch_size
     
     train_loss = []
     val_loss = []
     train_dataset = CustomDataset(train_feature, train_label)
-    train_loader = DataLoader(dataset=train_dataset, batch_size=32, shuffle=True)
+    train_loader = DataLoader(dataset=train_dataset, batch_size=batch_size, shuffle=True)
     
     val_dataset = CustomDataset(val_feature, val_label)
-    val_loader = DataLoader(dataset=val_dataset, batch_size=32, shuffle=False)
+    val_loader = DataLoader(dataset=val_dataset, batch_size=batch_size, shuffle=False)
     
     for epoch in tqdm(range(epochs)):
         loss1, loss2 = 0, 0
@@ -186,8 +199,14 @@ def calculate_accuracy(model, loader, size):
     correct = 0
     model.eval()
     for X, y in loader:
-        pred = torch.argmax(model(X), dim=1)
-        equal = torch.sum(torch.eq(pred, y))
+        output = model(X)
+        output_exp = torch.exp(output)
+        exp_sum = torch.sum(output_exp, axis=1)
+        pred = torch.div(output_exp.T, (exp_sum+1)).T
+        pred_max, pred_indices = torch.max(output, dim=1)
+        other = 1/(exp_sum+1)
+        pred_final = torch.where(pred_max>other, pred_indices+1, 0) 
+        equal = torch.sum(torch.eq(y, pred_final))
         correct += equal
     return correct/size
 
@@ -209,8 +228,8 @@ def train_and_evaluate_other(args):
         
     if not args.eval_only:
         model, val_loader = train_eval_classifier(args)
-        acc = calculate_accuracy(model, val_loader, val_data['feature'].shape[0])
-    
+        acc = calculate_accuracy(model, val_loader, val_data['feature'].shape[0]).item()
+        utils.save_file(os.path.join(args.results_dir,'acc.json'), acc)
     return acc
 
 if __name__ == '__main__':
@@ -265,5 +284,28 @@ if __name__ == '__main__':
             action="store_true",
             help="No classifier training"
         )
+    parser.add_argument(
+        "--with_background_class",
+        action="store_true",
+        help="Dataset contains background or not"
+    )
+    parser.add_argument(
+            "--epoch",
+            type = int,
+            default=200,
+            help="Number of training epoch"
+        )
+    parser.add_argument(
+            "--batch_size",
+            type = int,
+            default=32,
+            help="Batch size"
+        )
+    parser.add_argument(
+            "--learning_rate",
+            type = int,
+            default=0.001,
+            help="Batch size"
+        )
     args, unknown = parser.parse_known_args()
-    train_and_evaluate(args)
+    train_and_evaluate_other(args)
