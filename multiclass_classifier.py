@@ -135,15 +135,15 @@ def train_eval_classifier(args):
     file = os.path.join(args.classifier_dir, 'train.pkl')
     train_data = utils.open_file(file)
     target_label = train_data['label']
-    train_feature = torch.from_numpy(train_data['feature'])
-    train_label = torch.from_numpy(train_data['label'])
+    train_feature = torch.from_numpy(train_data['feature']).to(device)
+    train_label = torch.from_numpy(train_data['label']).to(device)
     
     file = os.path.join(args.classifier_dir, 'val.pkl')
     val_data = utils.open_file(file)
     target_label = val_data['label']
-    val_feature = torch.from_numpy(val_data['feature'])
+    val_feature = torch.from_numpy(val_data['feature']).to(device)
 
-    val_label = torch.from_numpy(val_data['label'])
+    val_label = torch.from_numpy(val_data['label']).to(device)
     
     input_dim = train_feature.shape[1]
     if args.with_background_class:
@@ -209,6 +209,8 @@ def calculate_accuracy(model, loader, size):
         equal = torch.sum(torch.eq(y, pred_final))
         correct += equal
     return correct/size
+
+
 
 def train_and_evaluate_other(args):
     device = "cuda" if torch.cuda.is_available() else 'cpu'
@@ -308,4 +310,5 @@ if __name__ == '__main__':
             help="Batch size"
         )
     args, unknown = parser.parse_known_args()
+    # train_and_evaluate(args)
     train_and_evaluate_other(args)
