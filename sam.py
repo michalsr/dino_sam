@@ -89,6 +89,7 @@ def get_sam_regions(args):
     output_mode = "coco_rle" if args.convert_to_rle else "binary_mask"
     amg_kwargs = get_amg_kwargs(args)
     generator = SamAutomaticMaskGeneratorCls(sam, output_mode=output_mode, **amg_kwargs)
+    
 
     if not os.path.isdir(args.input):
         targets = [args.input]
@@ -97,11 +98,17 @@ def get_sam_regions(args):
             f for f in os.listdir(args.input) if not os.path.isdir(os.path.join(args.input, f))
         ]
         targets = [os.path.join(args.input, f) for f in targets]
+    if not os.path.exists(args.output):
 
-    os.makedirs(args.output, exist_ok=True)
+        os.makedirs(args.output, exist_ok=True)
 
     for t in targets:
         print(f"Processing '{t}'...")
+        base = os.path.basename(t)
+        base = os.path.splitext(base)[0]
+        save_base = os.path.join(args.output, base)
+        if os.path.isfile(save_base+".json"):
+            continue 
         image = cv2.imread(t)
         if image is None:
             print(f"Could not load '{t}' as an image, skipping...")
@@ -110,9 +117,7 @@ def get_sam_regions(args):
 
         masks = generator.generate(image)
 
-        base = os.path.basename(t)
-        base = os.path.splitext(base)[0]
-        save_base = os.path.join(args.output, base)
+      
         if output_mode == "binary_mask":
             os.makedirs(save_base, exist_ok=False)
             write_masks_to_folder(masks, save_base)

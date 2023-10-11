@@ -233,7 +233,7 @@ if __name__ == '__main__':
         "--dtype",
         type=str,
         default='fp16',
-        choices=['fp16', 'fp32'],
+        choices=['fp16', 'fp32','bf16'],
         help="Which mixed precision to use. Use fp32 for clip and dense_clip"
     )
 

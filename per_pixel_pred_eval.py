@@ -48,7 +48,7 @@ def per_pixel_prediction(args):
                 assert len(model_names) ==1
                 loaded_model = utils.open_file(os.path.join(model_path,model_names[0]))
                 predictions = loaded_model.decision_function(features)
-                assert predictions.shape == len(feature_all),args.num_classes
+                assert predictions.shape == (len(feature_all),args.num_classes+1)
         if 'after_softmax' in args.multi_region_pixels:
             # averaging softmax values for pixels in multiple regions
             class_predictions = softmax(predictions,axis=1)
