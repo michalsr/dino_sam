@@ -1,12 +1,14 @@
-import os 
-import utils 
+import os
+import utils
 import argparse
 import json
 import os
-import copy 
-import cv2 
+import copy
+import cv2
 from typing import Any, Dict, List
-import argparse 
+import argparse
+from time import time
+from tqdm import tqdm
 
 def load_sam_modules(args):
     checkpoint_basename = os.path.basename(args.checkpoint).lower()
@@ -52,7 +54,7 @@ def load_sam_modules(args):
             )
 
         if not args.model_type == "vit_t":
-            print("WARNING: Mobile-SAM uses the 'vit_t' model type; setting --model-type to 'vit_t")
+            print("WARNING: Mobile-SAM uses the 'vit_t' model type; setting --model-type to 'vit_t'")
             args.model_type = "vit_t"
 
     else: # Default SAM model
@@ -89,7 +91,6 @@ def get_sam_regions(args):
     output_mode = "coco_rle" if args.convert_to_rle else "binary_mask"
     amg_kwargs = get_amg_kwargs(args)
     generator = SamAutomaticMaskGeneratorCls(sam, output_mode=output_mode, **amg_kwargs)
-    
 
     if not os.path.isdir(args.input):
         targets = [args.input]
@@ -98,26 +99,37 @@ def get_sam_regions(args):
             f for f in os.listdir(args.input) if not os.path.isdir(os.path.join(args.input, f))
         ]
         targets = [os.path.join(args.input, f) for f in targets]
-    if not os.path.exists(args.output):
 
-        os.makedirs(args.output, exist_ok=True)
+    os.makedirs(args.output, exist_ok=True)
 
-    for t in targets:
-        print(f"Processing '{t}'...")
+    if args.benchmark:
+        targets = targets[:args.num_benchmark_trials]
+        print(f'Benchmarking with {len(targets)} trials...')
+
+    gen_times = []
+    pbar = tqdm(targets)
+    for t in pbar:
+        pbar.set_description(f"Processing {t}")
+
         base = os.path.basename(t)
         base = os.path.splitext(base)[0]
         save_base = os.path.join(args.output, base)
-        if os.path.isfile(save_base+".json"):
-            continue 
+        if os.path.isfile(save_base+".json") and not args.benchmark:
+            continue
         image = cv2.imread(t)
         if image is None:
             print(f"Could not load '{t}' as an image, skipping...")
             continue
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
+        start_time = time()
         masks = generator.generate(image)
+        end_time = time()
 
-      
+        if args.benchmark:
+            gen_times.append(end_time - start_time)
+            continue
+
         if output_mode == "binary_mask":
             os.makedirs(save_base, exist_ok=False)
             write_masks_to_folder(masks, save_base)
@@ -126,8 +138,12 @@ def get_sam_regions(args):
             with open(save_file, "w") as f:
                 json.dump(masks, f)
 
-    if args.convert_to_rle:
-        # add region ids 
+    if args.benchmark:
+        print('len gen_times', len(gen_times))
+        print(f"Average time per image with {len(gen_times)} trials (seconds): {sum(gen_times)/len(gen_times)}")
+
+    elif args.convert_to_rle:
+        # add region ids
         sam_files = os.listdir(args.output)
         for f in sam_files:
             new_sam_regions = []
@@ -136,7 +152,7 @@ def get_sam_regions(args):
                 image_id = f.replace('.json','')
                 region_id = f'{image_id}_region_{i}'
                 new_region = copy.deepcopy(region)
-                new_region['region_id'] = region_id 
+                new_region['region_id'] = region_id
                 new_sam_regions.append(new_region)
 
             utils.save_file(os.path.join(args.output, f), new_sam_regions)
@@ -187,7 +203,7 @@ def get_amg_kwargs(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
 
-    #sam regions 
+    #sam regions
     parser.add_argument(
     "--input",
     type=str,
@@ -240,6 +256,22 @@ if __name__ == '__main__':
             "Save masks as COCO RLEs in a single json instead of as a folder of PNGs. "
             "Requires pycocotools."
         ),
+    )
+
+    parser.add_argument(
+        "--benchmark",
+        action="store_true",
+        help=(
+            "Evaluate how long it takes on average for the model to generate masks for an image without saving"
+            " any output regions. Runs --num-benchmark-trials times.",
+        )
+    )
+
+    parser.add_argument(
+        "--num-benchmark-trials",
+        type=int,
+        default=100,
+        help="The number of times to run mask generation for benchmarking.",
     )
 
     amg_settings = parser.add_argument_group("AMG Settings")
@@ -326,5 +358,6 @@ if __name__ == '__main__':
             "in pixels are removed by postprocessing."
         ),
     )
+
     args = parser.parse_args()
     get_sam_regions(args)
