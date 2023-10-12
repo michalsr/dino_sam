@@ -57,6 +57,50 @@ def label_region(args,sam_region,annotation_map):
         # all zero 
         final_label = {key:0 for key in list(range(start_class,int(args.num_classes)+1))}      
     return final_label
+def label_vaw(args):
+    # Already have regions from data
+    # each entry has image id, polygon coordinates
+    annotation_file = utils.open_file(os.path.join(args.annotation_dir,args.annotation_file))
+   
+    # annotation file uses actual class names not numbers
+    label_map = utils.open_file(args.label_map)
+    # map images to instances to save space 
+    all_image_ids = [entry['image_id'] for entry in annotation_file]
+
+    image_to_instances = {key:[] for key in all_image_ids}
+    
+    for entry in tqdm(annotation_file):
+        instance_dict = {}
+        instance_dict['instance_id'] = entry['instance_id']
+
+         # 620 attributes 
+        instance_labels  = {key: -1 for key in list(range(0,621))}
+        if not args.use_sam:
+            # convert polygon to region 
+            # file name is instance id 
+            img = np.array(Image.open(os.path.join(args.image_dir,entry['image_id']+'.jpg')))
+
+            h, w = img.shape[0],img.shape[1] 
+            if entry['instance_polygon'] != None:
+                mask = utils.polygon_to_mask(entry['instance_polygon'],h,w)
+                instance_dict['mask'] = mask
+            
+            # just read attributes from file 
+            for p in entry['positive_attributes']:
+                idx = label_map[p]
+                instance_labels[idx] = 1
+        instance_dict['labels'] = instance_labels
+        image_to_instances[entry['image_id']].append(instance_dict)
+    for image_id in tqdm(image_to_instances):
+        utils.save_file(os.path.join(args.region_labels,image_id+'.pkl'),image_to_instances[image_id])
+
+    
+
+
+
+
+       
+
 
 def label_all_regions(args):
     if len(os.listdir(args.sam_dir)) == 0:
@@ -99,6 +143,28 @@ if __name__ == '__main__':
         help="Location of per-pixel annotations",
     )
     parser.add_argument(
+        "--annotation_file",
+        type=str,
+        default=None,
+        help="If annotations do not match up with image ids",
+    )
+    parser.add_argument(
+        "--label_map",
+        type=str,
+        default=None,
+        help="Convert class names to class ids",
+    )
+    parser.add_argument(
+        "--vaw",
+        action="store_true",
+        help="If Visual Attributes in the Wild (VAW) dataset. Different fxn used",
+    )
+    parser.add_argument(
+        "--use_sam",
+        action="store_false",
+        help="Only for VAW. Whether to use SAM regions or default instance masks",
+    )
+    parser.add_argument(
         "--ignore_zero",
         action="store_true",
         help="Include 0 class"
@@ -121,6 +187,15 @@ if __name__ == '__main__':
         default=95,
         help="Percent of pixels within a region that need to belong to the same class before region is assigned that label"
     )
+    parser.add_argument(
+        "--image_dir",
+        type=str,
+        default=None,
+        help="Image dir for vaw if needed for saving masks")
     
     args = parser.parse_args()
-    label_all_regions(args)
+    if args.vaw:
+        print('Labeling VAW dataset')
+        label_vaw(args)
+    else:
+        label_all_regions(args)

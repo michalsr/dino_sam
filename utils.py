@@ -9,6 +9,7 @@ from pathlib import Path
 from tqdm import tqdm
 import math
 import torch
+from PIL import Image, ImageDraw 
 import warnings
 import stat 
 def save_file(filename,data,json_numpy=False):
@@ -98,6 +99,26 @@ def save_json_file(filename,file_contents,numpy=False):
     else:
           with open(filename,'w+') as w:
             json.dump(file_contents,w,cls=NumpyArrayEncoder)
+
+def polygon_to_mask(polygons,h,w):
+    # for vaw, takes size of image and plots polygon boundary
+    # from https://github.com/ChenyunWu/PhraseCutDataset/blob/master/utils/data_transfer.py#L48
+    p_mask = np.zeros((h, w))
+    for polygon in polygons:
+        if len(polygon) < 2:
+            continue
+        p = []
+        for x, y in polygon:
+            p.append((int(x), int(y)))
+        img = Image.new('L', (w, h), 0)
+        ImageDraw.Draw(img).polygon(p, outline=1, fill=1)
+        mask = np.array(img)
+        p_mask += mask
+    p_mask = p_mask > 0
+    return p_mask.astype(int)
+
+
+
 class NumpyArrayEncoder(JSONEncoder):
     def default(self, obj):
         if isinstance(obj, np.ndarray):

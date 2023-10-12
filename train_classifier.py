@@ -27,6 +27,8 @@ def load_features(args,split='train'):
     label_files = os.listdir(label_dir)
 
     for file_name in tqdm(label_files):
+        if '.pkl'  not in file_name:
+            file_name = file_name + '.pkl'
         file_features = utils.open_file(os.path.join(feature_dir,file_name))
         file_labels = utils.open_file(os.path.join(label_dir,file_name))
 
