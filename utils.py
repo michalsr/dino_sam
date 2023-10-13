@@ -1,8 +1,8 @@
-import pickle 
-import os 
+import pickle
+import os
 from json import JSONEncoder
 from typing import Dict, Optional
-import yaml 
+import yaml
 import json
 import numpy as np
 from pathlib import Path
@@ -11,7 +11,7 @@ import math
 import torch
 from PIL import Image, ImageDraw 
 import warnings
-import stat 
+import stat
 def save_file(filename,data,json_numpy=False):
     """
     Based on https://github.com/salesforce/LAVIS/blob/main/lavis/common/utils.py
@@ -22,7 +22,7 @@ def save_file(filename,data,json_numpy=False):
     if not os.path.exists(parent_dir):
         os.makedirs(parent_dir)
     Path(parent_dir).chmod(0o0777)
-    file_ext = os.path.splitext(filename)[1]       
+    file_ext = os.path.splitext(filename)[1]
     if file_ext == ".npy":
         with open(filename, "wb+") as fopen:
             np.save(fopen, data)
@@ -43,9 +43,9 @@ def save_file(filename,data,json_numpy=False):
          with open(filename, "wb+") as fopen:
             pickle.dump(data, fopen)
     # give everybody read,write,execute
-    # not secure but should be ok 
+    # not secure but should be ok
     Path(filename).chmod(0o0777)
- 
+
 
 
 def open_file(filename):
@@ -67,10 +67,10 @@ def open_file(filename):
         with open(filename,'r+') as fopen:
             data = yaml.load(fopen,Loader=yaml.FullLoader)
     else:
-        # assume pickle 
+        # assume pickle
         with open(filename,"rb+") as fopen:
             data = pickle.load(fopen)
-    return data 
+    return data
 
 def save_pkl_file(filename,file_contents):
     parent_dir = filename.split('/')[-2]
@@ -83,7 +83,7 @@ def save_pkl_file(filename,file_contents):
 def open_pkl_file(filename):
     with open(filename,'rb') as r:
         file_contents = pickle.load(r)
-    return file_contents 
+    return file_contents
 def open_json_file(filename):
     with open(filename,'r+') as r:
         file_contents = json.load(r)
@@ -131,6 +131,7 @@ def intersect_and_union(
     ignore_index: bool,
     label_map: Optional[Dict[int, int]] = None,
     reduce_labels: bool = False,
+    reduce_pred_labels: bool = False,
 ):
     """Calculate intersection and Union.
     Args:
@@ -147,6 +148,8 @@ def intersect_and_union(
         reduce_labels (`bool`, *optional*, defaults to `False`):
             Whether or not to reduce all label values of segmentation maps by 1. Usually used for datasets where 0 is used for background,
             and background itself is not included in all classes of a dataset (e.g. ADE20k). The background label will be replaced by 255.
+        reduce_pred_labels (`bool`, *optional*, defaults to `False`):
+            Do the same as `reduce_labels` but for prediction labels.
      Returns:
          area_intersect (`ndarray`):
             The intersection of prediction and ground truth histogram on all classes.
@@ -169,6 +172,11 @@ def intersect_and_union(
         label[label == 0] = 255
         label = label - 1
         label[label == 254] = 255
+
+    if reduce_pred_labels:
+        pred_label[pred_label == 0] = 255
+        pred_label = pred_label - 1
+        pred_label[pred_label == 254] = 255
 
     mask = label != ignore_index
     #mask = np.not_equal(label, ignore_index)
@@ -196,6 +204,7 @@ def total_intersect_and_union(
     ignore_index: bool,
     label_map: Optional[Dict[int, int]] = None,
     reduce_labels: bool = False,
+    reduce_pred_labels: bool = False
 ):
     """Calculate Total Intersection and Union, by calculating `intersect_and_union` for each (predicted, ground truth) pair.
     Args:
@@ -212,6 +221,8 @@ def total_intersect_and_union(
         reduce_labels (`bool`, *optional*, defaults to `False`):
             Whether or not to reduce all label values of segmentation maps by 1. Usually used for datasets where 0 is used for background,
             and background itself is not included in all classes of a dataset (e.g. ADE20k). The background label will be replaced by 255.
+        reduce_pred_labels (`bool`, *optional*, defaults to `False`):
+            Same as `reduce_labels` but for prediction labels.
      Returns:
          total_area_intersect (`ndarray`):
             The intersection of prediction and ground truth histogram on all classes.
@@ -228,7 +239,7 @@ def total_intersect_and_union(
     total_area_label = np.zeros((num_labels,), dtype=np.float64)
     for result, gt_seg_map in tqdm(zip(results, gt_seg_maps)):
         area_intersect, area_union, area_pred_label, area_label = intersect_and_union(
-            result, gt_seg_map, num_labels, ignore_index, label_map, reduce_labels
+            result, gt_seg_map, num_labels, ignore_index, label_map, reduce_labels, reduce_pred_labels
         )
         total_area_intersect += area_intersect
         total_area_union += area_union
@@ -245,6 +256,7 @@ def mean_iou(
     nan_to_num: Optional[int] = None,
     label_map: Optional[Dict[int, int]] = None,
     reduce_labels: bool = False,
+    reduce_pred_labels: bool = False,
 ):
     """Calculate Mean Intersection and Union (mIoU).
     Args:
@@ -263,6 +275,8 @@ def mean_iou(
         reduce_labels (`bool`, *optional*, defaults to `False`):
             Whether or not to reduce all label values of segmentation maps by 1. Usually used for datasets where 0 is used for background,
             and background itself is not included in all classes of a dataset (e.g. ADE20k). The background label will be replaced by 255.
+        reduce_pred_labels (`bool`, *optional*, defaults to `False`):
+            Same as `reduce_labels` but for prediction labels.
     Returns:
         `Dict[str, float | ndarray]` comprising various elements:
         - *mean_iou* (`float`):
@@ -277,7 +291,7 @@ def mean_iou(
             Per category IoU.
     """
     total_area_intersect, total_area_union, total_area_pred_label, total_area_label = total_intersect_and_union(
-        results, gt_seg_maps, num_labels, ignore_index, label_map, reduce_labels
+        results, gt_seg_maps, num_labels, ignore_index, label_map, reduce_labels, reduce_pred_labels
     )
 
     # compute metrics
@@ -303,7 +317,7 @@ def mean_iou(
 
 
 """
-Avoid tricky shadowing importing issues when using cached torch hub models  
+Avoid tricky shadowing importing issues when using cached torch hub models
 """
 def _no_grad_trunc_normal_(tensor, mean, std, a, b):
     # Cut & paste from PyTorch official master until it's in a few official releases - RW
