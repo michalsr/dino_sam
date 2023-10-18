@@ -4,6 +4,7 @@ containing the downsampled SAM regions.
 '''
 # %%
 import os
+import sys
 import pickle
 import json
 from typing import List
@@ -83,27 +84,24 @@ class RegionEmbeddingGenerator:
         '''
         # Note that codebase names tensor dimensions as (B, nc, w, h), but based on the output Dino feature dimensions and the
         # width and height of the original image, we believe w h > h w is a naming convention, and it is actually trained for h w.
-        dino_feats = self.dino_feats
-        dinov2 = self.dinov2
-        sam_masks = self.padded_sam_masks
+        npatch = self.dino_feats.shape[1] * self.dino_feats.shape[2] # Total number of patches
+        h, w = self.padded_sam_masks.shape[1:]
 
-        npatch = dino_feats.shape[1] * dino_feats.shape[2] # Total number of patches
-        h, w = sam_masks.shape[1:]
+        pos_embed = self.dinov2.pos_embed.data # Extract tensor from parameter
 
-        pos_embed = dinov2.pos_embed.data # Extract tensor from parameter
         N = pos_embed.shape[1] - 1 # Total number of positional embeddings for the image (-1 excludes CLS token)
-
-        if npatch == N and h == w:
-            return pos_embed
-
-        patch_pos_embed = pos_embed.float()[:, 1:] # Skip CLS token; (1, sqrt(N) * sqrt(N), dim)
-
-        h0 = h // dinov2.patch_size + .1 # Number of patches in height + .1 to avoid rounding errors
-        w0 = w // dinov2.patch_size + .1 # Number of patches in width + .1 to avoid rounding errors
-
         sqrt_N = np.sqrt(N)
         assert np.isclose(sqrt_N, int(sqrt_N)) # N must be a perfect square
         sqrt_N = int(sqrt_N)
+
+        if npatch == N and h == w: # Don't need to interpolate as we're already at the right size
+            pos_embed = pos_embed[:, 1:] # Skip CLS token; (1, N, dim)
+            return rearrange(pos_embed, '1 (h w) d -> h w d', h=sqrt_N, w=sqrt_N) # (1, N, dim) -> (sqrt(N), sqrt(N), dim)
+
+        patch_pos_embed = pos_embed[:, 1:] # Skip CLS token; (1, sqrt(N) * sqrt(N), dim)
+
+        h0 = h // self.dinov2.patch_size + .1 # Number of patches in height + .1 to avoid rounding errors
+        w0 = w // self.dinov2.patch_size + .1 # Number of patches in width + .1 to avoid rounding errors
 
         sx, sy = float(w0) / sqrt_N, float(h0) / sqrt_N # How much to scale the positional embeddings to match w0, h0
         patch_pos_embed = F.interpolate(
@@ -234,16 +232,22 @@ if __name__ == '__main__':
             padder=padder
         )
 
-        region_embeds = generator.get_region_embeddings().cpu().numpy()
+        try:
+            region_embeds = generator.get_region_embeddings().cpu().numpy()
+
+        except Exception as e:
+            logger.error(f'Failed to generate region embeddings for path {sam_path}')
+            logger.exception(e)
+            sys.exit(1)
 
         out_path = os.path.join(args.output_dir, sam_basename.replace('.json', '.pkl'))
         with open(out_path, 'wb') as f:
             pickle.dump(region_embeds, f)
 
-    # %% Testing code
+    # # %% Testing code
     # dino_dir = '/shared/rsaas/dino_sam/features/dinov2/ADE20K/train'
     # sam_dir = '/shared/rsaas/dino_sam/sam_output/ADE20K/train'
-    # ex_name = 'ADE_train_00000001'
+    # ex_name = 'ADE_train_00003513'
 
     # sam_path = os.path.join(sam_dir, f'{ex_name}.json')
     # dino_feature_path = os.path.join(dino_dir, f'{ex_name}.pkl')
@@ -273,5 +277,6 @@ if __name__ == '__main__':
 
     # downsampled_masks = generator.downsample_sam_masks()
     # pos_embeds = generator.downsample_positional_embeddings()
+    # region_embeds = generator.get_region_embeddings(down_sam_masks=downsampled_masks, down_pos_embeds=pos_embeds)
 
     # %%
