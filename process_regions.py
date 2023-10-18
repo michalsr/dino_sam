@@ -19,6 +19,37 @@ import torch.nn.functional as F
 Given extracted regions from SAM and image features, create feature vectors for each region using some method (eg. avg)
 """
 
+def region_features_vaw(args,image_id_to_mask):
+    # vaw might not use sam masks 
+    #almost identical to region_features except no rle decoding
+    all_feature_files = [f for f in os.listdir(args.feature_dir) if os.path.isfile(os.path.join(args.feature_dir, f))]
+    for i,f in enumerate(tqdm(all_feature_files,desc='Region features',total=len(all_feature_files))):
+        features = utils.open_file(os.path.join(args.feature_dir,f))
+        file_name =f 
+        ext = os.path.splitext(f)[1]  
+        all_region_features_in_image = []
+        regions = image_id_to_mask[file_name.replace(ext,'')]
+        if len(regions) == 0:
+            continue
+        new_h, new_w = regions[0]['mask'].shape
+        patch_length = args.dino_patch_length
+        padded_h, padded_w = math.ceil(new_h / patch_length) * patch_length, math.ceil(new_w / patch_length) * patch_length # Get the padded height and width
+        upsample_feature = torch.nn.functional.upsample(torch.from_numpy(features).cuda(),size=[padded_h,padded_w],mode='bilinear') # First interpolate to the padded size
+        upsample_feature = T.CenterCrop((new_h, new_w)) (upsample_feature).squeeze(dim = 0) # Apply center cropping to the original size
+        f,h,w = upsample_feature.size()
+        for region in regions:
+                if 'mask' in list(region.keys()):
+                    region_feature = {}
+                    region_feature['instance_id'] = region['instance_id']
+
+                    r_1, r_2 = np.where(region['mask'] == 1)
+                    features_in_mask = upsample_feature[:,r_1,r_2].view(f,-1).mean(1).cpu().numpy()
+                    region_feature['region_feature'] = features_in_mask
+                    all_region_features_in_image.append(region_feature)
+        utils.save_file(os.path.join(args.region_feature_dir,file_name.replace(ext,'.pkl')),all_region_features_in_image)
+
+
+
 def region_features(args,image_id_to_sam):
     all_feature_files = [f for f in os.listdir(args.feature_dir) if os.path.isfile(os.path.join(args.feature_dir, f))]
     for i,f in enumerate(tqdm(all_feature_files,desc='Region features',total=len(all_feature_files))):
@@ -45,15 +76,18 @@ def region_features(args,image_id_to_sam):
                 all_region_features_in_image.append(sam_region_feature)
         utils.save_file(os.path.join(args.region_feature_dir,file_name.replace(ext,'.pkl')),all_region_features_in_image)
 
-def load_all_sam_regions(args):
-    if len(os.listdir(args.sam_dir)) == 0:
-        raise Exception(f"No sam regions found at {args.sam_dir}")
-    print(f"Loading sam regions from {args.sam_dir}")
-    image_id_to_sam = {}
-    for f in tqdm(os.listdir(args.sam_dir)):
-        sam_regions = utils.open_file(os.path.join(args.sam_dir,f))
-        image_id_to_sam[f.replace('.json','')] = sam_regions
-    return image_id_to_sam
+def load_all_regions(args):
+    if len(os.listdir(args.mask_dir)) == 0:
+        raise Exception(f"No regions found at {args.mask_dir}")
+    print(f"Loading region masks from {args.mask_dir}")
+    image_id_to_mask = {}
+    for f in tqdm(os.listdir(args.mask_dir)):
+        filename_extension = os.path.splitext(f)[1]
+        regions = utils.open_file(os.path.join(args.mask_dir,f))
+        if not args.use_sam:
+            regions = [r for r in regions if 'mask' in list(r.keys())]
+        image_id_to_mask[f.replace(filename_extension,'')] = regions
+    return image_id_to_mask
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -69,10 +103,10 @@ if __name__ == '__main__':
         help="Location of extracted features",
     )
     parser.add_argument(
-        "--sam_dir",
+        "--mask_dir",
         type=str,
         default=None,
-        help="Location of sam masks",
+        help="Location of masks (sam or ground truth if given)",
     )
 
     parser.add_argument(
@@ -89,6 +123,18 @@ if __name__ == '__main__':
         help="the length of dino patch",
     )
 
+    parser.add_argument(
+        "--use_sam",
+        action="store_false",
+        help="If not using json sam regions"
+    )
+
     args = parser.parse_args()
-    image_id_to_sam = load_all_sam_regions(args)
-    region_features(args,image_id_to_sam)
+    image_id_to_mask = load_all_regions(args)
+    if not args.use_sam:
+        print('Using instance masks')
+        region_features_vaw(args,image_id_to_mask)
+    else:
+        print('Using SAM masks')
+        region_features(args,image_id_to_mask)
+    

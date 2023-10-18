@@ -84,6 +84,8 @@ def label_vaw(args):
             if entry['instance_polygon'] != None:
                 mask = utils.polygon_to_mask(entry['instance_polygon'],h,w)
                 instance_dict['mask'] = mask
+            else:
+                continue 
             
             # just read attributes from file 
             for p in entry['positive_attributes']:

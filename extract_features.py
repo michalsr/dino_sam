@@ -89,7 +89,7 @@ def extract_dino_v1(args,model,image):
 def extract_dino_v2(args,model,image):
     layers = eval(args.layers)
     
-    print(f"Using layers:{layers}")
+    # print(f"Using layers:{layers}")
     if args.padding != "center":
         raise Exception("Only padding center is implemented")
     transform = T.Compose([
@@ -141,7 +141,7 @@ def extract_features(model, args, preprocess=None):
     all_image_files = [f for f in os.listdir(args.image_dir) if os.path.isfile(os.path.join(args.image_dir, f))]
     Path(args.feature_dir).mkdir(parents=True, exist_ok=True)
 
-    print("Using center padding")
+    # print("Using center padding")
 
     model = model.to(device='cuda', dtype=args.dtype)
     model.eval()
