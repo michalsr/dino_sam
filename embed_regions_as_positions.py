@@ -325,6 +325,7 @@ if __name__ == '__main__':
             if os.path.exists(target_path):
                 continue
 
+            # TODO Try to generate on GPU, then fallback to CPU if it fails with OutOfMemory
             gen_embeddings_for_masks(sam_basename, dino, padder, args)
 
     # %% Testing code
