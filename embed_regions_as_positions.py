@@ -19,6 +19,7 @@ import itertools
 import math
 import argparse
 from tqdm import tqdm
+from enum import Enum
 import logging, coloredlogs
 
 logger = logging.getLogger(__name__)
@@ -46,36 +47,54 @@ class CenterPadding(torch.nn.Module):
         output = F.pad(x, pads)
         return output
 
+class ScalingMethod(Enum):
+    UPSCALE_POS_EMBEDS = 'upscale_pos_embeds'
+    DOWNSCALE_SAM_MASKS = 'downscale_sam_masks'
+
 class RegionEmbeddingGenerator:
     def __init__(
         self,
-        dino_feats: torch.FloatTensor,
         sam_masks: torch.IntTensor,
         dinov2: torch.nn.Module,
-        padder: CenterPadding
+        padder: CenterPadding,
+        dino_feats: torch.FloatTensor = None,
+        scaling_method: ScalingMethod = ScalingMethod.DOWNSCALE_SAM_MASKS
     ):
         '''
         Args:
-            dino_feats (torch.Tensor): (d, npatches_h, npatches_w)
             sam_masks (torch.Tensor): (nmasks, h, w),
             dinov2 (torch.nn.Module): Dinov2 model used to generate the features.
             padder (torch.nn.Module): Padding module used for the corresponding Dinov2 model.
+            dino_feats (torch.Tensor): (d, npatches_h, npatches_w). Necessary if sacling_method is DOWNSCALE_SAM_MASKS.
+            scaling_method (ScalingMethod, optional): Method for scaling to match the positional embedding size to the image size.
         '''
-        # out-channels of the patch convolution is the feature dimension
-        if dino_feats.shape[0] != dinov2.patch_embed.proj.out_channels:
-            raise ValueError('Feature dimension of dino_feats must match out_channels of Dinov2 patch_embed')
-
-        self.dino_feats = dino_feats
         self.sam_masks = sam_masks
         self.dinov2 = dinov2
         self.padder = padder
+        self.dino_feats = dino_feats
+        self.scaling_method = scaling_method
+
+        # Ensure scaling method is valid
+        if not isinstance(scaling_method, ScalingMethod):
+            raise ValueError(f'Invalid scaling method {scaling_method}. Must be one of {list(ScalingMethod)}')
+
+        if scaling_method == ScalingMethod.DOWNSCALE_SAM_MASKS:
+            if dino_feats is None:
+                raise ValueError('dino_feats must be provided if scaling_method is DOWNSCALE_SAM_MASKS')
+
+            # out-channels of the patch convolution is the feature dimension
+            if dino_feats.shape[0] != dinov2.patch_embed.proj.out_channels:
+                raise ValueError('Feature dimension of dino_feats must match out_channels of Dinov2 patch_embed')
 
         # CenterPadding expects (b, c, h, w), so add a channel dimension then squeeze it out
         self.padded_sam_masks = padder(sam_masks.unsqueeze(1)).squeeze() # (nmasks, padded_h, padded_w)
 
-    def downsample_positional_embeddings(self) -> torch.FloatTensor:
+    def resample_positional_embeddings(self) -> torch.FloatTensor:
         '''
-        Downsamples DinoV2's positional embeddings to match the dimension of the patch features.
+        Rescales DinoV2's positional embeddings.
+
+        If scaling_method is DOWNSCALE_SAM_MASKS, rescales the positional embeddings to match the dimension of the patch features.
+        If scaling_method is UPSCALE_POS_EMBEDS, rescales the positional embeddings to match the dimension of the SAM masks.
 
         Based on interpolate_pos_encoding and prepare_tokens_with_masks of DinoVisionTransformer class
 
@@ -84,7 +103,6 @@ class RegionEmbeddingGenerator:
         '''
         # Note that codebase names tensor dimensions as (B, nc, w, h), but based on the output Dino feature dimensions and the
         # width and height of the original image, we believe w h > h w is a naming convention, and it is actually trained for h w.
-        npatch = self.dino_feats.shape[1] * self.dino_feats.shape[2] # Total number of patches
         h, w = self.padded_sam_masks.shape[1:]
 
         pos_embed = self.dinov2.pos_embed.data # Extract tensor from parameter
@@ -94,14 +112,19 @@ class RegionEmbeddingGenerator:
         assert np.isclose(sqrt_N, int(sqrt_N)) # N must be a perfect square
         sqrt_N = int(sqrt_N)
 
-        if npatch == N and h == w: # Don't need to interpolate as we're already at the right size
-            pos_embed = pos_embed[:, 1:] # Skip CLS token; (1, N, dim)
-            return rearrange(pos_embed, '1 (h w) d -> h w d', h=sqrt_N, w=sqrt_N) # (1, N, dim) -> (sqrt(N), sqrt(N), dim)
-
         patch_pos_embed = pos_embed[:, 1:] # Skip CLS token; (1, sqrt(N) * sqrt(N), dim)
 
-        h0 = h // self.dinov2.patch_size + .1 # Number of patches in height + .1 to avoid rounding errors
-        w0 = w // self.dinov2.patch_size + .1 # Number of patches in width + .1 to avoid rounding errors
+        if self.scaling_method == ScalingMethod.DOWNSCALE_SAM_MASKS:
+            npatch = self.dino_feats.shape[1] * self.dino_feats.shape[2] # Total number of patches
+            if npatch == N and h == w: # Don't need to interpolate as we're already at the right size
+                return rearrange(patch_pos_embed, '1 (h w) d -> h w d', h=sqrt_N, w=sqrt_N) # (1, N, dim) -> (sqrt(N), sqrt(N), dim)
+
+            # Compute target pos embed dimensions; scale to match the number of patches
+            h0 = h // self.dinov2.patch_size + .1 # Number of patches in height + .1 to avoid rounding errors
+            w0 = w // self.dinov2.patch_size + .1 # Number of patches in width + .1 to avoid rounding errors
+
+        elif self.scaling_method == ScalingMethod.UPSCALE_POS_EMBEDS:
+            h0, w0 = h + .1, w + .1 # Target pos embed dimensions; upscaling to full mask size
 
         sx, sy = float(w0) / sqrt_N, float(h0) / sqrt_N # How much to scale the positional embeddings to match w0, h0
         patch_pos_embed = F.interpolate(
@@ -117,47 +140,58 @@ class RegionEmbeddingGenerator:
 
         return patch_pos_embed
 
-    def downsample_sam_masks(self) -> torch.IntTensor:
+    def resample_sam_masks(self) -> torch.IntTensor:
         '''
-        Downsamples the sam_masks for an image to match the dino_feats shape (the patch feature shapes):
-        (nmasks, h, w) -> (nmasks, npatches_h, npatches_w)
+        If scaling_method is DOWNSCALE_SAM_MASKS, downsamples the sam_masks for an image to match the dino_feats shape
+        (the patch feature shapes): (nmasks, h, w) -> (nmasks, npatches_h, npatches_w)
+
+        If scaling method is UPSCALE_POS_EMBEDS, this is a no-op.
         '''
-        # CenterPadding pads height and width to be a multiple of 14 equally on left and right
-        sam_masks = self.padded_sam_masks # (nmasks, padded_h, padded_w)
-        sam_masks = rearrange(sam_masks, 'b h w -> b 1 h w') # interpolate needs a channel dimension
+        if self.scaling_method == ScalingMethod.UPSCALE_POS_EMBEDS:
+            return self.padded_sam_masks
 
-        down_sam_mask = F.interpolate(
-            sam_masks.contiguous(), # Segfaults if not contiguous
-            size=self.dino_feats.shape[1:],
-            mode='bilinear'
-        ) # (nmasks, 1, npatches_h, npatches_w)
+        elif self.scaling_method == ScalingMethod.DOWNSCALE_SAM_MASKS:
+            # CenterPadding pads height and width to be a multiple of 14 equally on left and right
+            sam_masks = self.padded_sam_masks # (nmasks, padded_h, padded_w)
+            sam_masks = rearrange(sam_masks, 'b h w -> b 1 h w') # interpolate needs a channel dimension
 
-        return down_sam_mask.squeeze()
+            resampled_sam_mask = F.interpolate(
+                sam_masks.contiguous(), # Segfaults if not contiguous
+                size=self.dino_feats.shape[1:],
+                mode='bilinear'
+            ) # (nmasks, 1, npatches_h, npatches_w)
 
-    def get_region_embeddings(self, down_sam_masks: torch.IntTensor = None, down_pos_embeds: torch.FloatTensor = None) -> torch.FloatTensor:
+            return resampled_sam_mask.squeeze()
+
+        else:
+            raise NotImplementedError(f'Scaling method {self.scaling_method} not implemented')
+
+    def get_region_embeddings(self, resampled_sam_masks: torch.IntTensor = None, resampled_pos_embeds: torch.FloatTensor = None) -> torch.FloatTensor:
         '''
-        Returns embeddings for the SAM regions as the average of the DinoV2 positional embeddings corresponding to image
-        patches containing the downsampled SAM regions.
+        Returns embeddings for the SAM regions as the average of the DinoV2 positional embeddings for that region.
+
+        If scaling_method is DOWNSCALE_SAM_MASKS, the positional embeddings are averaged over the downsampled SAM regions.
+        If scaling_method is UPSCALE_POS_EMBEDS, the positional embeddings are upscaled and averaged over the full SAM regions.
 
         Args:
-            down_sam_masks (torch.IntTensor, optional): Output of downsample_sam_masks. (nmasks, npatches_h, npatches_w).
+            resampled_sam_masks (torch.IntTensor, optional): Output of resample_sam_masks. (nmasks, npatches_h, npatches_w).
             Defaults to None.
 
-            down_pos_embeds (torch.FloatTensor, optional): Output of downsample_positional_embeddings. (npatches_h, npatches_w, dim).
+            resampled_pos_embeds (torch.FloatTensor, optional): Output of resample_positional_embeddings. (npatches_h, npatches_w, dim).
             Defaults to None.
 
         Returns:
             torch.FloatTensor: (nmasks, dim)
         '''
-        if down_sam_masks is None:
-            down_sam_masks = self.downsample_sam_masks().int() # Call int in case was cast to float for cuda
-        if down_pos_embeds is None:
-            down_pos_embeds = self.downsample_positional_embeddings()
+        if resampled_sam_masks is None:
+            resampled_sam_masks = self.resample_sam_masks().int() # Call int in case was cast to float for cuda
+        if resampled_pos_embeds is None:
+            resampled_pos_embeds = self.resample_positional_embeddings()
 
         # Extract the region embeddings
-        bin_sam_masks = down_sam_masks.to(torch.bool) # Should already be binary, but just in case. (nmasks, npatches_h, npatches_w)
+        bin_sam_masks = resampled_sam_masks.to(torch.bool) # Should already be binary, but just in case. (nmasks, npatches_h, npatches_w)
 
-        masked_pos_embeds = down_pos_embeds * bin_sam_masks.unsqueeze(-1) # (nmasks, npatches_h, npatches_w, dim)
+        masked_pos_embeds = resampled_pos_embeds * bin_sam_masks.unsqueeze(-1) # (nmasks, npatches_h, npatches_w, dim)
 
         mask_embeds = reduce(masked_pos_embeds, 'n h w d -> n d', 'sum') # (nmasks, dim); sum masked embeddings over patches
         mask_embeds = mask_embeds / reduce(bin_sam_masks, 'n h w -> n', 'sum').unsqueeze(-1) # (nmasks, dim); divide by number of summed nonzero embeddings
@@ -172,6 +206,9 @@ def parse_args(cl_args: List[str] = None):
     parser.add_argument('--dino_model', default='dinov2_vitl14', help='DinoV2 model used to generate the image features')
     parser.add_argument('--device', choices=['cpu', 'cuda'], default='cpu', help='Device to use for computing embeddings')
 
+    parser.add_argument('--scaling_method', choices=['upscale_pos_embeds', 'downscale_sam_masks'], default='downscale_sam_masks',
+                        help='Method for scaling to match the positional embedding size to the image size')
+
     args = parser.parse_args(cl_args)
 
     return args
@@ -179,10 +216,11 @@ def parse_args(cl_args: List[str] = None):
 # %%
 if __name__ == '__main__':
     args = parse_args([
-        '--feature_dir', '/shared/rsaas/dino_sam/features/dinov2/ADE20K/train',
-        '--sam_dir', '/shared/rsaas/dino_sam/sam_output/ADE20K/train',
-        '--output_dir', '/shared/rsaas/dino_sam/sam_region_embeddings/ADE20K/train',
-        '--device', 'cpu'
+        '--feature_dir', '/shared/rsaas/dino_sam/features/dinov2/pascal_voc_layer_23/train',
+        '--sam_dir', '/shared/rsaas/dino_sam/sam_output/pascal_voc/train',
+        '--output_dir', '/shared/rsaas/dino_sam/sam_region_embeddings/pascal_voc/train_upscale',
+        '--device', 'cpu',
+        '--scaling_method', 'upscale_pos_embeds'
     ])
 
     if args.device == 'cuda':
@@ -212,24 +250,35 @@ if __name__ == '__main__':
         if args.device == 'cuda':
             sam_masks = sam_masks.float() # Cuda needs floats to interpolate
 
-        # Load DinoV2 features
-        feature_path = os.path.join(args.feature_dir, sam_basename.replace('.json', '.pkl'))
+        # Scaling method-specific arguments
+        if args.scaling_method == ScalingMethod.DOWNSCALE_SAM_MASKS.value:
+            # Load DinoV2 features
+            feature_path = os.path.join(args.feature_dir, sam_basename.replace('.json', '.pkl'))
 
-        if not os.path.exists(feature_path):
-            logger.warning(f'Feature path {feature_path} does not exist')
-            continue
+            if not os.path.exists(feature_path):
+                logger.warning(f'Feature path {feature_path} does not exist')
+                continue
 
-        with open(feature_path, 'rb') as f:
-            dino_feats = pickle.load(f)[0] # (d, npatches_h, npatches_w)
+            with open(feature_path, 'rb') as f:
+                dino_feats = pickle.load(f)[0] # (d, npatches_h, npatches_w)
 
-        dino_feats = torch.from_numpy(dino_feats).to(device)
+            dino_feats = torch.from_numpy(dino_feats).to(device)
+            scaling_method = ScalingMethod.DOWNSCALE_SAM_MASKS
+
+        elif args.scaling_method == ScalingMethod.UPSCALE_POS_EMBEDS.value:
+            dino_feats = None
+            scaling_method = ScalingMethod.UPSCALE_POS_EMBEDS
+
+        else:
+            raise NotImplementedError(f'Scaling method {args.scaling_method} not implemented')
 
         # Embed regions
         generator = RegionEmbeddingGenerator(
-            dino_feats=dino_feats,
             sam_masks=sam_masks,
             dinov2=dino,
-            padder=padder
+            padder=padder,
+            dino_feats=dino_feats,
+            scaling_method=scaling_method
         )
 
         try:
@@ -248,12 +297,24 @@ if __name__ == '__main__':
     # dino_dir = '/shared/rsaas/dino_sam/features/dinov2/ADE20K/train'
     # sam_dir = '/shared/rsaas/dino_sam/sam_output/ADE20K/train'
     # ex_name = 'ADE_train_00003513'
+    # scaling_method = ScalingMethod.UPSCALE_POS_EMBEDS.value
 
     # sam_path = os.path.join(sam_dir, f'{ex_name}.json')
     # dino_feature_path = os.path.join(dino_dir, f'{ex_name}.pkl')
 
-    # with open(dino_feature_path, 'rb') as f:
-    #     dino_feats = torch.from_numpy(pickle.load(f)[0]) # (d, npatches_h, npatches_w)
+    # # Handle different scaling methods
+    # if scaling_method == ScalingMethod.DOWNSCALE_SAM_MASKS.value:
+    #     with open(dino_feature_path, 'rb') as f:
+    #         dino_feats = torch.from_numpy(pickle.load(f)[0]) # (d, npatches_h, npatches_w)
+
+    #     scaling_method = ScalingMethod.DOWNSCALE_SAM_MASKS
+
+    # elif scaling_method == ScalingMethod.UPSCALE_POS_EMBEDS.value:
+    #     dino_feats = None
+    #     scaling_method = ScalingMethod.UPSCALE_POS_EMBEDS
+
+    # else:
+    #     raise NotImplementedError(f'Scaling method {scaling_method} not implemented')
 
     # with open(sam_path) as f:
     #     mask_data = json.load(f)
@@ -269,14 +330,15 @@ if __name__ == '__main__':
 
     # # %%
     # generator = RegionEmbeddingGenerator(
-    #     dino_feats=dino_feats,
     #     sam_masks=sam_masks,
     #     dinov2=dino,
-    #     padder=padder
+    #     padder=padder,
+    #     dino_feats=dino_feats,
+    #     scaling_method=scaling_method
     # )
 
-    # downsampled_masks = generator.downsample_sam_masks()
-    # pos_embeds = generator.downsample_positional_embeddings()
-    # region_embeds = generator.get_region_embeddings(down_sam_masks=downsampled_masks, down_pos_embeds=pos_embeds)
+    # resampled_masks = generator.resample_sam_masks()
+    # pos_embeds = generator.resample_positional_embeddings()
+    # region_embeds = generator.get_region_embeddings(resampled_sam_masks=resampled_masks, resampled_pos_embeds=pos_embeds)
 
     # %%
