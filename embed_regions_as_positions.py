@@ -190,7 +190,7 @@ class RegionEmbeddingGenerator:
             torch.FloatTensor: (nmasks, dim)
         '''
         if resampled_sam_masks is None:
-            resampled_sam_masks = self.resample_sam_masks().int() # Call int in case was cast to float for cuda
+            resampled_sam_masks = self.resample_sam_masks()
         if resampled_pos_embeds is None:
             resampled_pos_embeds = self.resample_positional_embeddings()
 
@@ -290,14 +290,13 @@ if __name__ == '__main__':
         '--output_dir', '/shared/rsaas/dino_sam/sam_region_embeddings/ADE20K/train_upscale',
         '--device', 'cuda',
         '--n_jobs', '1',
-        '--chunk_size', '5',
+        '--chunk_size', '1',
         '--scaling_method', 'upscale_pos_embeds'
     ])
 
     if args.device == 'cuda':
         logger.warning(
             'Cuda interpolate needs floats and outputs a small number of non-binary masks (in one test, .05% were non-binary).'
-            ' Unless speed is a necessity, CPU interpolation is recommended.'
         )
 
         if args.n_jobs > 1:
