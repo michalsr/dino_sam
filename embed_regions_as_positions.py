@@ -200,7 +200,7 @@ class RegionEmbeddingGenerator:
 
         all_mask_embeds = []
         for bin_sam_mask_chunk in bin_sam_mask_chunks:
-            masked_pos_embeds_chunk = resampled_pos_embeds * bin_sam_mask_chunk.unsqueeze(-1) # (nmasks_or_chunk_size, npatches_h, npatches_w, dim)
+            masked_pos_embeds_chunk = resampled_pos_embeds * bin_sam_mask_chunk.unsqueeze(-1) # (nmasks_or_chunk_size, npatches_h_or_h, npatches_w_or_w, dim)
             mask_embeds_chunk = reduce(masked_pos_embeds_chunk, 'n h w d -> n d', 'sum') # (nmasks_or_chunk_size, dim); sum masked embeddings over patches
             mask_embeds_chunk = mask_embeds_chunk / reduce(bin_sam_mask_chunk, 'n h w -> n', 'sum').unsqueeze(-1) # (nmasks_or_chunk_size, dim); divide by number of summed nonzero embeddings
             all_mask_embeds.append(mask_embeds_chunk)
@@ -309,14 +309,22 @@ if __name__ == '__main__':
 
     logger.info(f'Generating SAM region embeddings for {args.sam_dir}')
 
+    prog_bar = tqdm(sorted(os.listdir(args.sam_dir)))
+
     if args.n_jobs > 1:
         Parallel(n_jobs=args.n_jobs, backend='threading')(
             delayed(gen_embeddings_for_masks)(sam_basename, dino, padder, args)
-            for sam_basename in tqdm(os.listdir(args.sam_dir))
+            for sam_basename in prog_bar
         )
 
     else:
-        for sam_basename in tqdm(os.listdir(args.sam_dir)):
+        for sam_basename in prog_bar:
+            prog_bar.set_description(sam_basename)
+            target_path = os.path.join(args.output_dir, sam_basename.replace('.json', '.pkl'))
+
+            if os.path.exists(target_path):
+                continue
+
             gen_embeddings_for_masks(sam_basename, dino, padder, args)
 
     # %% Testing code
