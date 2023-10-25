@@ -219,7 +219,7 @@ def parse_args(cl_args: List[str] = None):
     parser.add_argument('--chunk_size', type=int, default=50,
                         help='Number of SAM masks to compute embeddings for at a time. Runs out of memory on CPU if too large and scaling_method is upscale.')
 
-    parser.add_argument('--scaling_method', choices=['upscale_pos_embeds', 'downscale_sam_masks'], default='downscale_sam_masks',
+    parser.add_argument('--scaling_method', choices=[m.value for m in ScalingMethod], default='downscale_sam_masks',
                         help='Method for scaling to match the positional embedding size to the image size')
 
     args = parser.parse_args(cl_args)
@@ -302,6 +302,12 @@ if __name__ == '__main__':
 
         if args.n_jobs > 1:
             logger.warning('Parallelization is not supported on cuda')
+
+    if args.scaling_method == ScalingMethod.DOWNSCALE_SAM_MASKS.value:
+        logger.warning(
+            'Downscaling SAM masks frequently produces zero-masks for small regions.'
+            ' Consider using upscale_pos_embeds instead.'
+        )
 
     os.makedirs(args.output_dir, exist_ok=True)
 
