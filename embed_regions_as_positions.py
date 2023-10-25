@@ -70,7 +70,10 @@ class RegionEmbeddingGenerator:
             scaling_method (ScalingMethod, optional): Method for scaling to match the positional embedding size to the image size.
         '''
         self.sam_masks = sam_masks
-        self.dinov2 = dinov2
+
+        self.dino_pos_embeds = dinov2.pos_embed.data
+        self.dino_patch_size = dinov2.patch_size
+
         self.padder = padder
         self.dino_feats = dino_feats
         self.scaling_method = scaling_method
@@ -106,14 +109,12 @@ class RegionEmbeddingGenerator:
         # width and height of the original image, we believe w h > h w is a naming convention, and it is actually trained for h w.
         h, w = self.padded_sam_masks.shape[1:]
 
-        pos_embed = self.dinov2.pos_embed.data # Extract tensor from parameter
-
-        N = pos_embed.shape[1] - 1 # Total number of positional embeddings for the image (-1 excludes CLS token)
+        N = self.dino_pos_embeds.shape[1] - 1 # Total number of positional embeddings for the image (-1 excludes CLS token)
         sqrt_N = np.sqrt(N)
         assert np.isclose(sqrt_N, int(sqrt_N)) # N must be a perfect square
         sqrt_N = int(sqrt_N)
 
-        patch_pos_embed = pos_embed[:, 1:] # Skip CLS token; (1, sqrt(N) * sqrt(N), dim)
+        patch_pos_embed = self.dino_pos_embeds[:, 1:] # Skip CLS token; (1, sqrt(N) * sqrt(N), dim)
 
         if self.scaling_method == ScalingMethod.DOWNSCALE_SAM_MASKS:
             npatch = self.dino_feats.shape[1] * self.dino_feats.shape[2] # Total number of patches
@@ -121,8 +122,8 @@ class RegionEmbeddingGenerator:
                 return rearrange(patch_pos_embed, '1 (h w) d -> h w d', h=sqrt_N, w=sqrt_N) # (1, N, dim) -> (sqrt(N), sqrt(N), dim)
 
             # Compute target pos embed dimensions; scale to match the number of patches
-            h0 = h // self.dinov2.patch_size + .1 # Number of patches in height + .1 to avoid rounding errors
-            w0 = w // self.dinov2.patch_size + .1 # Number of patches in width + .1 to avoid rounding errors
+            h0 = h // self.dino_patch_size + .1 # Number of patches in height + .1 to avoid rounding errors
+            w0 = w // self.dino_patch_size + .1 # Number of patches in width + .1 to avoid rounding errors
 
         elif self.scaling_method == ScalingMethod.UPSCALE_POS_EMBEDS:
             h0, w0 = h + .1, w + .1 # Target pos embed dimensions; upscaling to full mask size
@@ -331,20 +332,20 @@ if __name__ == '__main__':
     # %% Testing code
     # dino_dir = '/shared/rsaas/dino_sam/features/dinov2/ADE20K/train'
     # sam_dir = '/shared/rsaas/dino_sam/sam_output/ADE20K/train'
-    # ex_name = 'ADE_train_00003513'
-    # scaling_method = ScalingMethod.UPSCALE_POS_EMBEDS.value
+    # ex_name = 'ADE_train_00019668' # This example has zero masks when downscaled
+    # scaling_method = ScalingMethod.DOWNSCALE_SAM_MASKS
 
     # sam_path = os.path.join(sam_dir, f'{ex_name}.json')
     # dino_feature_path = os.path.join(dino_dir, f'{ex_name}.pkl')
 
     # # Handle different scaling methods
-    # if scaling_method == ScalingMethod.DOWNSCALE_SAM_MASKS.value:
+    # if scaling_method == ScalingMethod.DOWNSCALE_SAM_MASKS:
     #     with open(dino_feature_path, 'rb') as f:
     #         dino_feats = torch.from_numpy(pickle.load(f)[0]) # (d, npatches_h, npatches_w)
 
     #     scaling_method = ScalingMethod.DOWNSCALE_SAM_MASKS
 
-    # elif scaling_method == ScalingMethod.UPSCALE_POS_EMBEDS.value:
+    # elif scaling_method == ScalingMethod.UPSCALE_POS_EMBEDS:
     #     dino_feats = None
     #     scaling_method = ScalingMethod.UPSCALE_POS_EMBEDS
 
