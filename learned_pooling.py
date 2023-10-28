@@ -3,6 +3,7 @@ import os
 import random
 import pickle
 import torch
+from typing import Union
 import numpy as np
 import torch
 import pickle
@@ -13,6 +14,8 @@ import torch.nn as nn
 from torch.utils.data import DataLoader, Dataset
 import wandb
 from itertools import islice
+from torchmetrics import Metric, MetricCollection
+from torchmetrics.classification import MulticlassAccuracy
 import logging, coloredlogs
 
 logger = logging.getLogger(__name__)
@@ -75,7 +78,7 @@ class AttentionSegmentation(nn.Module):
         super(AttentionSegmentation, self).__init__()
 
         # Multi-Head Attention
-        self.attention = nn.MultiheadAttention(embed_dim, num_heads)
+        self.attention = nn.MultiheadAttention(embed_dim, num_heads, dropout=0.1)
 
         # Final linear layer to output area-wise labels
         self.fc = nn.Linear(embed_dim, num_classes)
@@ -154,7 +157,7 @@ def evaluate_model(adder, model, val_dataloader, num_classes):
 
             outputs = outputs.transpose(0, 1).view(-1, num_classes)
             _, predicted = torch.max(outputs.data, 1)
-            labels = labels.view(-1)
+            labels = labels.view(-1).to(outputs.device)
 
             all_predictions.append(predicted.cpu().numpy())
             all_labels.append(labels.cpu().numpy())
@@ -192,19 +195,59 @@ def compute_mIOU(predictions, labels, num_classes):
 
     return miou
 
-def compute_loss(dataloader, model, adder: AddDinoV2PosEmbeds, criterion):
-    total_loss = 0.0
-    with torch.no_grad():
-        for sam_embeds, dino_feats, labels in tqdm(dataloader, desc='Computing loss'):
-            outputs = forward_pass(sam_embeds, dino_feats, model, adder)
+@torch.inference_mode()
+def predict(
+    dataloader,
+    model,
+    adder,
+    return_outputs=False,
+    criterion=None,
+    metrics: Union[MetricCollection,Metric] = None
+):
+    model.eval()
 
-            outputs = outputs.view(-1, num_classes)
-            labels = labels.view(-1).to(outputs.device)
+    if metrics is not None:
+        metrics.reset()
 
-            loss = criterion(outputs, labels)
-            total_loss += loss.item()
+    all_outputs = []
+    all_predictions = []
+    all_labels = []
+    loss = 0
 
-    return total_loss / len(dataloader)
+    for sam_embeds, dino_feats, labels in tqdm(dataloader, desc='Predicting'):
+        outputs = forward_pass(sam_embeds, dino_feats, model, adder)
+        outputs = outputs.transpose(0, 1).view(-1, num_classes)
+        _, predicted = torch.max(outputs.data, 1)
+
+        labels = labels.view(-1).to(outputs.device)
+
+        if return_outputs:
+            all_outputs.append(outputs.cpu())
+
+        if criterion is not None:
+            loss += criterion(outputs, labels)
+
+        if metrics is not None:
+            metrics(predicted, labels)
+
+        all_predictions.append(predicted.cpu())
+        all_labels.append(labels.cpu())
+
+    ret_dict = {
+        'all_predictions': torch.cat(all_predictions),
+        'all_labels': torch.cat(all_labels)
+    }
+
+    if return_outputs:
+        ret_dict['all_outputs'] = torch.cat(all_outputs)
+
+    if criterion is not None:
+        ret_dict['loss'] = loss / len(dataloader)
+
+    if metrics is not None:
+        ret_dict['metrics'] = metrics.compute()
+
+    return ret_dict
 
 class FirstN:
     def __init__(self, iterable, n):
@@ -221,11 +264,11 @@ class FirstN:
 if __name__ == '__main__':
     #  Hyperparameters
     device = 'cuda'
-    accum_grad_steps = 4
+    accum_grad_steps = 4 # Number of images we average the gradients over before optimizer step
     limit_train_batches = None # None for all batches
-    limit_val_batches = 100 # None for all batches
-    lr = 5e-4
-    n_epochs = 30
+    limit_val_batches = 500 # None for all batches
+    lr = 5e-5
+    n_epochs = 100
     seed = 42
 
     config = dict(
@@ -243,9 +286,10 @@ if __name__ == '__main__':
     random.seed(seed)
     np.random.seed(seed)
 
+    # %%
     embed_dim = 1024  # Adjusted feature dimension for sam_embeds and dino_feats
     num_heads = 8  # Number of heads in MultiheadAttention mechanism
-    num_classes = 151  # Number of classes for area-wise labels
+    num_classes = 21  # Number of classes for area-wise labels
 
     # Model instantiation
     dino = torch.hub.load('facebookresearch/dinov2', 'dinov2_vitl14')
@@ -282,6 +326,10 @@ if __name__ == '__main__':
 
     # %%
     # Training loop
+    metrics = MetricCollection({
+        'accuracy': MulticlassAccuracy(num_classes=num_classes, average='micro')
+    }).to(device)
+
     for epoch in range(n_epochs):  # Example number of epochs
         logger.info(f'Starting training of epoch {epoch + 1}...')
 
@@ -312,30 +360,21 @@ if __name__ == '__main__':
         # Compute validation loss
         logger.info('Starting validation set evaluation...')
 
-        model.eval()
-        val_loss = compute_loss(val_dataloader, model, adder, criterion)
-        wandb.log({'val_loss': val_loss, 'epoch': epoch + 1})
+        results = predict(val_dataloader, model, adder, criterion=criterion, metrics=metrics)
+        val_loss = results['loss']
+        val_accuracy = results['metrics']['accuracy']
+        wandb.log({'val_loss': val_loss, 'val_accuracy': val_accuracy, 'epoch': epoch + 1})
 
-        predictions, labels = evaluate_model(adder, model, val_dataloader, num_classes)
-        miou = compute_mIOU(predictions, labels, num_classes)
+        # NOTE This should not be used because here we're classifying regions, NOT computing segmentation maps
+        # predictions, labels = evaluate_model(adder, model, val_dataloader, num_classes)
+        # miou = compute_mIOU(predictions, labels, num_classes)
 
-        wandb.log({
-            'mIoU': miou['mean_iou'],
-            'mean_accuracy': miou['mean_accuracy'],
-            'overall_accuracy': miou['overall_accuracy'],
-            'epoch': epoch + 1
-        })
+        # wandb.log({
+        #     'mIoU': miou['mean_iou'],
+        #     'mean_accuracy': miou['mean_accuracy'],
+        #     'overall_accuracy': miou['overall_accuracy'],
+        #     'epoch': epoch + 1
+        # })
 
-        logger.info(f"Epoch {epoch + 1}, Train Loss: {epoch_train_loss}, Validation Loss: {val_loss}, mIoU: {miou}")
-
-    # Plot training and validation loss
-    # plt.figure(figsize=(12, 6))
-    # plt.plot(train_losses, label='Training Loss')
-    # plt.plot(val_losses, label='Validation Loss')
-    # plt.title('Training and Validation Loss over Epochs')
-    # plt.xlabel('Epochs')
-    # plt.ylabel('Loss')
-    # plt.legend()
-    # plt.grid(True)
-    # plt.show()
+        logger.info(f"Epoch {epoch + 1}, Train Loss: {epoch_train_loss:.3f}, Validation Loss: {val_loss:.3f}, Validation Accuracy: {val_accuracy:.3f}")
 # %%
