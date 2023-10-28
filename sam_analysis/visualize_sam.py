@@ -95,7 +95,7 @@ def image_from_masks(
     # If there is only one mask, ensure we get a visible color
     colors = get_colors(masks.shape[0], cmap_name=cmap, as_tuples=True) if masks.shape[0] > 1 else 'aqua'
 
-    if superimpose_on_image:
+    if superimpose_on_image is not None:
         alpha = .8
         background = superimpose_on_image
     else:
