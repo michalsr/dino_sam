@@ -14,6 +14,7 @@ from scipy.special import softmax, logit
 import scipy
 from tqdm import tqdm
 from utils import mean_iou
+from PIL import Image
 import warnings
 warnings.filterwarnings("ignore")
 """
@@ -23,21 +24,30 @@ def per_pixel_prediction(args):
     all_pixel_predictions = []
     # keep track of oroder of predictions 
     file_names = []
-    model_path = args.classifier_dir
+    model_path = os.path.join(args.classifier_dir,args.classifier_name)
     model_names = [filename for filename in os.listdir(model_path) if filename.startswith("model")]
     val_features = args.val_region_feature_dir
     val_files = [filename for filename in os.listdir(val_features)]
     for file in tqdm(val_files):
         file_names.append(file)
         all_sam = utils.open_file(os.path.join(args.sam_dir,file.replace('.pkl','.json')))
+        if args.use_pos_embd:
+            pos_embd = utils.open_file(os.path.join(args.val_pos_embd_dir,file))
         all_regions = []
         region_order = []
+       
         for i, region in enumerate(all_sam):
             mask = mask_utils.decode(region['segmentation'])
             all_regions.append(mask)
             region_order.append(region['region_id'])
         region_features = utils.open_file(os.path.join(val_features,file))
-        feature_all = [area['region_feature'] for j,area in enumerate(region_features)]
+        if args.use_pos_embd:
+            feature_all = []
+            for j,area in enumerate(region_features):
+                 feature_all.append(area['region_feature']+pos_embd[i,:])
+        else:
+
+            feature_all = [area['region_feature'] for j,area in enumerate(region_features)]
         region_all = {area['region_id']:j for j,area in enumerate(region_features)}
         # track region id
         region_idx = [region_all[r] for r in region_order]
@@ -103,7 +113,8 @@ def compute_iou(args,predictions,file_names):
         num_classes = args.num_classes 
         reduce_labels = False
     miou = mean_iou(results=predictions,gt_seg_maps=actual_labels,num_labels=num_classes,ignore_index=255,reduce_labels=reduce_labels)
-    utils.save_file(os.path.join(args.result_dir,'mean_iou.json'),miou,json_numpy=True)
+    print(miou)
+    utils.save_file(os.path.join(args.results_dir,'mean_iou.json'),miou,json_numpy=True)
 
 
 
@@ -197,6 +208,47 @@ def evaluate_classifier_vaw(args, class_id):
     print(f'Average Precision Score = {ap_score} for class {class_id}')
     return roc_auc, ap_score    
 
+def load_features_positional_embedding(args,split='train'):
+    # same thing as other load features excepts add sam masks as positional embeddings
+    feature_all = []
+    label_all = []
+    weight_all = []
+    if split == 'train':
+        feature_dir = args.train_region_feature_dir 
+        label_dir = args.train_region_labels_dir 
+        pos_embd_dir = args.train_pos_embd_dir 
+    else:
+        feature_dir = args.val_region_feature_dir
+        label_dir = args.val_region_labels_dir 
+        pos_embd_dir = args.val_pos_embd_dir 
+
+
+    label_files = os.listdir(label_dir)
+
+    for file_name in tqdm(label_files):
+        if '.pkl'  not in file_name:
+            file_name = file_name + '.pkl'
+        file_features = utils.open_file(os.path.join(feature_dir,file_name))
+        pos_embd = utils.open_file(os.path.join(pos_embd_dir,file_name))
+        file_labels = utils.open_file(os.path.join(label_dir,file_name))
+
+        for i, area in enumerate(file_features):
+            area_feature = area['region_feature']+pos_embd[i,:]
+
+            area_label = file_labels[i]['labels']
+            target_label = list(area_label.keys())[0]
+
+            if area_label[target_label] == 1:
+                feature_all.append(area_feature)
+                label_all.append(target_label)
+                weight_all.append(area['area'])
+
+    save_dict = {}
+    save_dict['feature'] = np.stack(feature_all)
+    save_dict['label'] = np.stack(label_all)
+    save_dict['weight'] = np.stack(weight_all)
+    utils.save_file(os.path.join(args.classifier_dir,split+'_pos_embd.pkl'),save_dict)
+    return save_dict
 
 
 def load_features(args,split='train'):
@@ -240,7 +292,10 @@ def load_features(args,split='train'):
 def train_mlp(args):
 
     clf = MLPClassifier(verbose=True,learning_rate_init=args.mlp_lr,max_iter=args.iterations,hidden_layer_sizes=[1000])
-    train_data = utils.open_file(os.path.join(args.classifier_dir, 'train.pkl'))
+    if args.use_pos_embd:
+        train_data = utils.open_file(os.path.join(args.classifier_dir, 'train_pos_embd.pkl'))
+    else:
+        train_data = utils.open_file(os.path.join(args.classifier_dir, 'train.pkl'))
    
     train_features = train_data['feature']
     target_label = train_data['label']
@@ -248,8 +303,13 @@ def train_mlp(args):
     save_dir = os.path.join(args.classifier_dir,args.classifier_name,f'model_mlp.sav')
     utils.save_file(save_dir,clf)
     print(f'Saved classifier {save_dir}')
-    clf = utils.open_file(os.path.join(args.classifier_dir,ars.classifier_name, f'model_mlp.sav'))
-    val_data = utils.open_file(os.path.join(args.classifier_dir,'val.pkl'))
+    clf = utils.open_file(os.path.join(args.classifier_dir,args.classifier_name, f'model_mlp.sav'))
+    if args.use_pos_embd:
+        val_data = utils.open_file(os.path.join(args.classifier_dir,'val_pos_embd.pkl'))
+    else:
+
+        val_data = utils.open_file(os.path.join(args.classifier_dir,'val.pkl'))
+        
     val_features = val_data['feature']
     val_label = val_data['label']
 
@@ -307,12 +367,20 @@ def train_classifier(args, class_id):
 
 
 def train_and_evaluate(args):
-    training_file = os.path.join(args.classifier_dir,'train.pkl')
-    val_file = os.path.join(args.classifier_dir,'val.pkl')
+    if args.use_pos_embd:
+        training_file = os.path.join(args.classifier_dir,'train_pos_embd.pkl')
+        val_file = os.path.join(args.classifier_dir,'val_pos_embd.pkl')
+    else:
+        training_file = os.path.join(args.classifier_dir,'train.pkl')
+        val_file = os.path.join(args.classifier_dir,'val.pkl')
+    
+   
     # root_feature, root_label, save_root,
     if not os.path.exists(training_file):
         if args.vaw:
             train_data = load_features_vaw(args,'train')
+        elif args.use_pos_embd:
+            train_data = load_features_positional_embedding(args,'train')
         else:
             train_data = load_features(args,'train')
     else:
@@ -321,6 +389,8 @@ def train_and_evaluate(args):
     if not os.path.exists(val_file):
         if args.vaw:
             val_data = load_features_vaw(args,'val')
+        elif args.use_pos_embd:
+            val_data = load_features_positional_embedding(args,'val')
         else:
             val_data = load_features(args,'val')
     else:
@@ -340,7 +410,8 @@ def train_and_evaluate(args):
     avg_ap = []
     avg_roc_auc = []
     if args.mlp:
-        train_mlp(args)
+        if not args.eval_only:
+            train_mlp(args)
 
     else:
         for i in range(int(min_class),int(max_class)+1):
@@ -495,5 +566,23 @@ if __name__ == '__main__':
     type=str,
     default="binary",
     help="Binary or multi-class ")
+    parser.add_argument("--use_pos_embd",
+    action="store_true",
+    help="Add in sam pos encod")
+    parser.add_argument("--train_pos_embd_dir",
+    type=str,
+    default=None,
+    help="Train pos embedding")
+    parser.add_argument("--val_pos_embd_dir",
+    type=str,
+    default=None,
+    help="Val pos embedding")
+
+    parser.add_argument(
+        "--num_classes",
+        type=int,
+        default=0,
+        help="Number of classes in dataset"
+    )
     args = parser.parse_args()
     train_and_evaluate(args)
