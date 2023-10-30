@@ -16,8 +16,10 @@ from torch.profiler import profile, record_function, ProfilerActivity
 import utils 
 import torch.nn.functional as F
 from pathlib import Path
-import clip
-from dense_clip import DenseCLIP
+# import clip
+# from dense_clip import DenseCLIP
+from transformers import ViTFeatureExtractor, ViTModel
+import timm
 
 """
 For extraction features for a given dataset and model. 
@@ -36,6 +38,11 @@ class FeatureExtractorHook:
 def register_hook(model):
     extractor_hook = FeatureExtractorHook()
     hook = model.visual.transformer.register_forward_hook(extractor_hook.hook_fn)
+    return hook, extractor_hook
+
+def register_hook1(model):
+    extractor_hook = FeatureExtractorHook()
+    hook = model.norm.register_forward_hook(extractor_hook.hook_fn)
     return hook, extractor_hook
 
 class CenterPadding(torch.nn.Module):
@@ -135,8 +142,35 @@ def extract_dense_clip(args, model, image):
         feature = model(image)
 
     return feature.detach().cpu().to(torch.float32).numpy()[None]
+    
+def extract_imagenet(args, model, image):
+    layers = eval(args.layers)
+    
+    transform = T.Compose([T.ToTensor(),
+                           lambda x: x.unsqueeze(0),
+                           CenterPadding(multiple = args.multiple)])
+    img = transform(image).to(device='cuda',dtype=args.dtype)
+    
+    hook, extractor_hook = register_hook1(model)
+    with torch.no_grad():
+        output = model(img)
+        
+    hook.remove()
+    
+    if extractor_hook.features is not None:
+        features = [extractor_hook.features]
+        features_out = [f.detach().cpu() for f in features]
 
-
+        img = img.cpu()
+        features = [f[:, 1:] for f in features_out] # Remove the cls tokens
+        features = torch.cat(features, dim=-1) # B, H * W, C
+        B, _, C= features.size()
+        W, H = image.size
+        patch_H, patch_W = math.ceil(H / args.multiple), math.ceil(W / args.multiple)
+        features = features.permute(0, 2, 1).view(B, C, patch_H, patch_W)
+        
+    return features.detach().cpu().to(torch.float32).numpy()
+    
 def extract_features(model, args, preprocess=None):
     all_image_files = [f for f in os.listdir(args.image_dir) if os.path.isfile(os.path.join(args.image_dir, f))]
     Path(args.feature_dir).mkdir(parents=True, exist_ok=True)
@@ -148,6 +182,9 @@ def extract_features(model, args, preprocess=None):
 
     for i, f in enumerate(tqdm(all_image_files, desc='Extract', total=len(all_image_files))):
         image_name = f
+        if image_name == 'ADE_train_00006921.jpg':
+            continue
+        
         filename_extension = os.path.splitext(image_name)[1]
         try:
             image = Image.open(os.path.join(args.image_dir, f)).convert('RGB')
@@ -166,6 +203,9 @@ def extract_features(model, args, preprocess=None):
         
         elif args.model == 'dense_clip':
             features = extract_dense_clip(args, model, image)
+        
+        elif args.model == 'imagenet':
+            features = extract_imagenet(args, model, image)
 
         utils.save_file(os.path.join(args.feature_dir, image_name.replace(filename_extension, ".pkl")), features)
 
@@ -208,7 +248,7 @@ if __name__ == '__main__':
         "--model",
         type=str,
         default='dinov2_vitl14',
-        choices=['dinov2_vitl14', 'dino_vitb8', 'clip','dino_vitb16','dense_clip'],  
+        choices=['dinov2_vitl14', 'dino_vitb8', 'clip','dino_vitb16','dense_clip', 'imagenet'],  
         help="Name of model from repo"
     )
 
@@ -253,6 +293,8 @@ if __name__ == '__main__':
         model, preprocess = clip.load(args.clip_model, device=device)
     elif args.model == 'dense_clip':
         model = DenseCLIP('ViT-L/14@336px').to(device)
+    elif args.model == 'imagenet':
+        model = timm.create_model('vit_large_patch32_224.orig_in21k', pretrained=True, dynamic_img_size = True)
     else:
         model = torch.hub.load(f'{args.model_repo_name}', f'{args.model}')
 
