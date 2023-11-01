@@ -33,7 +33,7 @@ def show(
         row = i // ncols
         col = i % ncols
 
-        img = img.detach()
+        img = img.detach().cpu()
         img = F.to_pil_image(img)
 
         axs[row, col].imshow(np.asarray(img))
@@ -105,6 +105,36 @@ def image_from_masks(
     masks = draw_segmentation_masks(background, masks, colors=colors, alpha=alpha)
 
     return masks
+
+def masks_to_boundaries(masks: torch.Tensor):
+    '''
+    Given a set of masks, return a set of masks of the boundary pixels.
+
+    masks: (n,h,w)
+    Returns: (n,h,w) boolean tensor of boundary pixels
+    '''
+    # Convert masks to boolean and zero pad the masks to have regions on image edges
+    # use the edges as boundaries
+    masks = masks.bool()
+    masks_padded = torch.nn.functional.pad(masks, (1, 1, 1, 1))
+
+    # Initialize the boundaries tensor with the same size as the padded masks
+    boundaries = torch.zeros_like(masks_padded)
+
+    # Compute boundaries, only considering the boundaries of True values
+    center = masks_padded[:, 1:-1, 1:-1] # Values in the unpadded image
+
+    boundaries[:, 1:-1, 1:-1] = ( # Assign to original image region
+        (center & (center != masks_padded[:, :-2, 1:-1])).float() + # Check if the center is True and the pixel to the left is False
+        (center & (center != masks_padded[:, 2:, 1:-1])).float() + # Check if the center is True and the pixel to the right is False
+        (center & (center != masks_padded[:, 1:-1, :-2])).float() + # Check if the center is True and the pixel above is False
+        (center & (center != masks_padded[:, 1:-1, 2:])).float() # Check if the center is True and the pixel below is False
+    ) > 0
+
+    # Remove the padding from the boundaries tensor to match the original size
+    boundaries = boundaries[:, 1:-1, 1:-1]
+
+    return boundaries
 
 def compare_model_outputs(
     img_name: str,
