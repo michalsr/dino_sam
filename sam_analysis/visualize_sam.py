@@ -1,10 +1,11 @@
 # %%
 # See https://pytorch.org/vision/main/auto_examples/others/plot_repurposing_annotations.html
-
+import os
+import sys
+sys.path.append(os.path.realpath(os.path.join(os.path.dirname(__file__), '..')))
 import numpy as np
 import matplotlib.pyplot as plt
 import torchvision.transforms.functional as F
-import os
 from torchvision.io import read_image
 from pycocotools import mask as mask_utils
 from torchvision.utils import draw_segmentation_masks
@@ -25,23 +26,22 @@ def show(
     if not isinstance(imgs, list):
         imgs = [imgs]
 
-    ncols = len(imgs) // nrows
+    ncols = int(np.ceil(len(imgs) / nrows))
     fig, axs = plt.subplots(nrows=nrows, ncols=ncols, squeeze=False)
     fig.tight_layout()
 
-    for i, img in enumerate(imgs):
-        row = i // ncols
-        col = i % ncols
+    for i, ax in enumerate(axs.flatten()):
+        if i < len(imgs):
+            img = F.to_pil_image(imgs[i].detach().cpu())
+            ax.imshow(np.asarray(img))
+            ax.set(xticklabels=[], yticklabels=[], xticks=[], yticks=[])
 
-        img = img.detach().cpu()
-        img = F.to_pil_image(img)
+            # Set titles for each individual subplot
+            if subplot_titles and i < len(subplot_titles):
+                ax.set_title(subplot_titles[i])
 
-        axs[row, col].imshow(np.asarray(img))
-        axs[row, col].set(xticklabels=[], yticklabels=[], xticks=[], yticks=[])
-
-        # Set titles for each individual subplot
-        if subplot_titles and i < len(subplot_titles):
-            axs[row, col].set_title(subplot_titles[i])
+        else: # Hide subplots with no images
+            ax.set_visible(False)
 
     if title:
         fig.suptitle(title, y=title_y)
