@@ -91,10 +91,22 @@ if __name__ == '__main__':
             img = rearrange(torch.tensor(np.array(f)), 'h w c -> c h w')
 
         # Visualize SAM masks and SLIC regions
-        show(image_from_masks(sam_masks, superimpose_on_image=img)) # Masked regions
-        show(~sam_masks.any(dim=0).int()) # Unmasked regions
-        show(img_from_superpixels(img, slic_assignment)) # Superpixel assignment
-        show(image_from_masks(unmasked_slic_regions, superimpose_on_image=img)) # SLIC regions covering unmasked regions
-        show(image_from_slic_and_sam(img, sam_masks, unmasked_slic_regions)) # SLIC regions covering unmasked regions and SAM masks
+        masked_regions_img = image_from_masks(sam_masks, superimpose_on_image=img) # SAM mask regions
+        unmasked_regions_img = sam_masks.any(dim=0).logical_not().int() # Regions unmasked by SAM
+        superpixel_assignment_img = img_from_superpixels(img, slic_assignment) # Superpixel assignment
+        slic_covering_unmasked_img = image_from_masks(unmasked_slic_regions, superimpose_on_image=img) # SLIC covering unmasked regions
+        slic_and_sam_img = image_from_slic_and_sam(img, sam_masks, unmasked_slic_regions) # SLIC covering unmasked regions + SAM masks
+
+        slic_intersect_unmasked = unmasked_slic_regions.any(dim=0) * unmasked_regions_img.bool()
+        slic_and_sam_smooth_img = image_from_slic_and_sam(img, sam_masks, slic_intersect_unmasked.unsqueeze(0)) # SLIC intersect unmasked regions + SAM masks
+
+        show(masked_regions_img)
+        show(unmasked_regions_img)
+        show(superpixel_assignment_img)
+        show(slic_covering_unmasked_img)
+        show(slic_and_sam_img)
+        show(slic_and_sam_smooth_img)
+
+        show([masked_regions_img, unmasked_regions_img, slic_covering_unmasked_img, slic_and_sam_smooth_img], nrows=2)
 
 # %%
