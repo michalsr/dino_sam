@@ -186,7 +186,7 @@ if __name__ == '__main__':
     parser.add_argument(
         "--label_percent",
         type=int,
-        default=95,
+        default=50,
         help="Percent of pixels within a region that need to belong to the same class before region is assigned that label"
     )
     parser.add_argument(

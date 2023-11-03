@@ -47,7 +47,10 @@ def per_pixel_prediction(args):
                 # should just be one model 
                 assert len(model_names) ==1
                 loaded_model = utils.open_file(os.path.join(model_path,model_names[0]))
-                predictions = loaded_model.decision_function(features)
+                if args.mlp:
+                    predictions= loaded_model.predict_proba(features)
+                else:
+                    predictions = loaded_model.decision_function(features)
                 assert predictions.shape == (len(feature_all),args.num_classes+1)
         if 'after_softmax' in args.multi_region_pixels:
             # averaging softmax values for pixels in multiple regions
@@ -153,6 +156,9 @@ if __name__ == '__main__':
     type=str,
     default="binary",
     help="Binary or multi-class ")
+    parser.add_argument("--mlp",
+    action='store_true',
+    help="Use correct syntax for mlp ")
     args = parser.parse_args()
     all_pixel_predictions, file_names = per_pixel_prediction(args)
     compute_iou(args,all_pixel_predictions,file_names)

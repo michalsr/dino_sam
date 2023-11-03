@@ -21,6 +21,9 @@ from pathlib import Path
 from transformers import ViTFeatureExtractor, ViTModel
 import timm
 
+import clip
+from dense_clip import DenseCLIP
+import cv2 
 """
 For extraction features for a given dataset and model. 
 """
@@ -102,6 +105,7 @@ def extract_dino_v2(args,model,image):
     transform = T.Compose([
         T.ToTensor(),
         lambda x: x.unsqueeze(0),
+
         CenterPadding(multiple = args.multiple),
         T.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))])
     with torch.inference_mode():
@@ -187,7 +191,10 @@ def extract_features(model, args, preprocess=None):
         
         filename_extension = os.path.splitext(image_name)[1]
         try:
-            image = Image.open(os.path.join(args.image_dir, f)).convert('RGB')
+            cv = cv2.imread(os.path.join(args.image_dir, f))
+            color_coverted = cv2.cvtColor(cv, cv2.COLOR_BGR2RGB) 
+            image = Image.fromarray(color_coverted)
+
         except:
             print(f'Could not read image {f}')
             continue

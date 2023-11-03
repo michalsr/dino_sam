@@ -1,2 +1,3 @@
 #!/bin/bash
-python label_regions.py --region_labels /shared/rsaas/dino_sam/region_labels/ADE20K/val --annotation_dir /shared/rsaas/dino_sam/data/ADE20K/annotations/validation --num_classes 150 --sam_dir /shared/rsaas/dino_sam/sam_output/ADE20K/val
+python label_regions.py --region_labels /shared/rsaas/dino_sam/region_labels/ADE20K_no_threshold/train --annotation_dir /shared/rsaas/dino_sam/data/ADE20K/annotations/training --num_classes 150 --sam_dir /shared/rsaas/dino_sam/sam_output/ADE20K/train --label_percent 0
+python label_regions.py --region_labels /shared/rsaas/dino_sam/region_labels/ADE20K_no_threshold/val --annotation_dir /shared/rsaas/dino_sam/data/ADE20K/annotations/validation --num_classes 150 --sam_dir /shared/rsaas/dino_sam/sam_output/ADE20K/val --label_percent 0

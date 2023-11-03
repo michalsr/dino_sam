@@ -19,16 +19,33 @@ import torch.nn.functional as F
 Given extracted regions from SAM and image features, create feature vectors for each region using some method (eg. avg)
 """
 
-def region_features_vaw(args,image_id_to_mask):
+def region_features_vaw(args):
+    # 
     # vaw might not use sam masks 
     #almost identical to region_features except no rle decoding
+    image_id_to_mask = {}
+    for f in tqdm(os.listdir(args.mask_dir)):
+        # listed by instanes not regions 
+        filename_extension = os.path.splitext(f)[1]
+        try:
+            regions = utils.open_file(os.path.join(args.mask_dir,f))
+        except:
+            print(f)
+
+        image_id = regions['image_id'].replace(filename_extension,'')
+        if image_id not in image_id_to_mask:
+            image_id_to_mask[image_id] = []
+        if isinstance(regions['mask'],np.ndarray):
+            image_id_to_mask[image_id].append(regions)
+
     all_feature_files = [f for f in os.listdir(args.feature_dir) if os.path.isfile(os.path.join(args.feature_dir, f))]
-    for i,f in enumerate(tqdm(all_feature_files,desc='Region features',total=len(all_feature_files))):
-        features = utils.open_file(os.path.join(args.feature_dir,f))
-        file_name =f 
-        ext = os.path.splitext(f)[1]  
+    for i,image_id in enumerate(tqdm(image_id_to_mask)):
+    #for i,f in enumerate(tqdm(all_feature_files,desc='Region features',total=len(all_feature_files))):
+        features = utils.open_file(os.path.join(args.feature_dir,image_id+'.pkl'))
+        # file_name =f 
+        # ext = os.path.splitext(f)[1]  
         all_region_features_in_image = []
-        regions = image_id_to_mask[file_name.replace(ext,'')]
+        regions = image_id_to_mask[image_id]
         if len(regions) == 0:
             continue
         new_h, new_w = regions[0]['mask'].shape
@@ -39,14 +56,14 @@ def region_features_vaw(args,image_id_to_mask):
         f,h,w = upsample_feature.size()
         for region in regions:
                 if 'mask' in list(region.keys()):
+                    # save instances 
                     region_feature = {}
                     region_feature['instance_id'] = region['instance_id']
-
-                    r_1, r_2 = np.where(region['mask'] == 1)
-                    features_in_mask = upsample_feature[:,r_1,r_2].view(f,-1).mean(1).cpu().numpy()
-                    region_feature['region_feature'] = features_in_mask
-                    all_region_features_in_image.append(region_feature)
-        utils.save_file(os.path.join(args.region_feature_dir,file_name.replace(ext,'.pkl')),all_region_features_in_image)
+                    if not os.path.exists(os.path.join(args.region_feature_dir,str(region['instance_id'])+'.pkl')):
+                        r_1, r_2 = np.where(region['mask'] == 1)
+                        features_in_mask = upsample_feature[:,r_1,r_2].view(f,-1).mean(1).cpu().numpy()
+                        region_feature['region_feature'] = features_in_mask
+                        utils.save_file(os.path.join(args.region_feature_dir,str(region['instance_id'])+'.pkl'),region_feature)
 
 
 
@@ -130,11 +147,12 @@ if __name__ == '__main__':
     )
 
     args = parser.parse_args()
-    image_id_to_mask = load_all_regions(args)
+
     if not args.use_sam:
         print('Using instance masks')
-        region_features_vaw(args,image_id_to_mask)
+        region_features_vaw(args)
     else:
         print('Using SAM masks')
+        image_id_to_mask = load_all_regions(args)
         region_features(args,image_id_to_mask)
     
