@@ -16,13 +16,10 @@ from torch.profiler import profile, record_function, ProfilerActivity
 import utils 
 import torch.nn.functional as F
 from pathlib import Path
-# import clip
-# from dense_clip import DenseCLIP
-from transformers import ViTFeatureExtractor, ViTModel
-import timm
-
 import clip
 from dense_clip import DenseCLIP
+from transformers import ViTFeatureExtractor, ViTModel
+import timm
 import cv2 
 """
 For extraction features for a given dataset and model. 
@@ -255,7 +252,7 @@ if __name__ == '__main__':
         "--model",
         type=str,
         default='dinov2_vitl14',
-        choices=['dinov2_vitl14', 'dino_vitb8', 'clip','dino_vitb16','dense_clip', 'imagenet'],  
+        choices=['dinov2_vitl14', 'dino_vitb8', 'dinov2_vits14', 'dinov2_vitb14', 'dinov2_vitg14', 'clip','dino_vitb16','dense_clip', 'imagenet'],  
         help="Name of model from repo"
     )
 
