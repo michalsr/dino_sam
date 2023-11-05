@@ -29,13 +29,12 @@ def img_from_superpixels(img: torch.tensor, assignment: torch.tensor):
 # %%
 if __name__ == '__main__':
     # Define the input and output directories
-    # input_dir = '/shared/rsaas/dino_sam/data/ADE20K/images/training' # Image directory
-    input_dir = '/shared/rsaas/dino_sam/data/VOCdevkit/VOC2012/JPEGImages'
-    output_dir = '/home/blume5/dino_sam/outputs/slic/pascal/all' # Segmentation data output directory
+    input_dir = '/shared/rsaas/dino_sam/data/ADE20K/images/validation' # Image directory
+    output_dir = '/home/blume5/dino_sam/outputs/slic/ade20k/val/50_8' # Segmentation data output directory
 
     # Define the parameters for the superpixel algorithm
-    num_components = 1000
-    compactness = 10
+    num_components = 50
+    compactness = 8
 
     os.makedirs(output_dir, exist_ok=True)
 
@@ -50,7 +49,12 @@ if __name__ == '__main__':
 
         # Apply the superpixel algorithm
         slic = Slic(num_components=num_components, compactness=compactness)
-        assignment = slic.iterate(img)
+
+        try:
+            assignment = slic.iterate(img)
+        except ValueError as e:
+            print(f'Failed to perform SLIC on {filename}: {e}')
+            continue
 
         # Save superpixel data
         ret_dict = {
