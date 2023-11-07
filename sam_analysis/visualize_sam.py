@@ -22,12 +22,13 @@ def show(
     title_y: float = 1,
     subplot_titles: List[str] = None,
     nrows: int = 1,
+    fig_kwargs: dict = {}
 ):
     if not isinstance(imgs, list):
         imgs = [imgs]
 
     ncols = int(np.ceil(len(imgs) / nrows))
-    fig, axs = plt.subplots(nrows=nrows, ncols=ncols, squeeze=False)
+    fig, axs = plt.subplots(nrows=nrows, ncols=ncols, squeeze=False, **fig_kwargs)
     fig.tight_layout()
 
     for i, ax in enumerate(axs.flatten()):
