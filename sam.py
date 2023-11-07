@@ -126,8 +126,8 @@ def get_sam_regions(args):
         masks = generator.generate(image)
         end_time = time()
 
+        gen_times.append(end_time - start_time)
         if args.benchmark:
-            gen_times.append(end_time - start_time)
             continue
 
         if output_mode == "binary_mask":
@@ -138,11 +138,9 @@ def get_sam_regions(args):
             with open(save_file, "w") as f:
                 json.dump(masks, f)
 
-    if args.benchmark:
-        print('len gen_times', len(gen_times))
-        print(f"Average time per image with {len(gen_times)} trials (seconds): {sum(gen_times)/len(gen_times)}")
+    print(f"Average time per image with {len(gen_times)} trials (seconds): {sum(gen_times)/len(gen_times)}")
 
-    elif args.convert_to_rle:
+    if args.convert_to_rle:
         # add region ids
         sam_files = os.listdir(args.output)
         for f in sam_files:
