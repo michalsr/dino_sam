@@ -56,6 +56,7 @@ if __name__ == '__main__':
             print(f'Failed to perform SLIC on {filename}: {e}')
             continue
 
+        # TODO call to_sam_format.assignment_to_sam_dicts(assignment, image_id) here instead of saving this intermediate repr
         # Save superpixel data
         ret_dict = {
             'assignment': assignment,

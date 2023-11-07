@@ -2,15 +2,17 @@
 Converts SLIC assignment matrices (or stacked masks from any source) to pseudo-SAM dicts usable by process_regions.py.
 '''
 # %%
-import torch
+from tqdm import tqdm
 import json
 import pickle
 import os
 from pycocotools import mask as mask_utils
 import numpy as np
+from joblib import Parallel, delayed
 
 def stacked_masks_to_sam_dicts(stacked_masks: np.ndarray, image_id: str):
     '''
+    Creates a list of SAM dicts for use by process_regions.py from a stack of binary masks.
     Args:
         stacked_masks (np.ndarray): Binary tensor of stacked SAM masks. (n,h,w).
         image_id (str): Image ID of the image the SAM masks came from.
@@ -24,17 +26,21 @@ def stacked_masks_to_sam_dicts(stacked_masks: np.ndarray, image_id: str):
     #  "size": [h, w],
     # "counts": RLE-encoded binary mask
     # }
+    segmentations = mask_utils.encode(np.asfortranarray(stacked_masks.astype(np.uint8).transpose(1, 2, 0))) # List of dicts
+    for segmentation in segmentations:
+        segmentation['counts'] = segmentation['counts'].decode('utf-8') # Decode to string to save as JSON
 
     return [
         {
             'region_id': f'{image_id}_region_{i}',
-            'area': mask.sum(),
-            'segmentation': mask_utils.encode(mask)
-        } for i, mask in enumerate(stacked_masks)
+            'area': mask.sum().item(),
+            'segmentation': segmentation
+        } for i, (mask, segmentation) in enumerate(zip(stacked_masks, segmentations))
     ]
 
-def assignment_to_sam_dict(assignment: np.ndarray, image_id: str):
-    '''Creates a SAM dict from a SLIC image assignment matrix.
+def assignment_to_sam_dicts(assignment: np.ndarray, image_id: str):
+    '''
+    Creates a list of SAM dicts from a SLIC image assignment matrix.
 
     Args:
         assignment (np.ndarray): Int array of SLIC superpixel assignments. Every pixel has an int assignment from 0 to n_regions. (h,w)
@@ -48,17 +54,39 @@ def assignment_to_sam_dict(assignment: np.ndarray, image_id: str):
         for val in np.unique(assignment)
     ])
 
-    masks = np.asfortranarray(masks.astype(np.uint8))
-
     return stacked_masks_to_sam_dicts(np.stack(masks), image_id)
 
-# %%
-if __name__ == '__main__':
-    slic_path = '/home/blume5/shared/slic/ade20k/train/50_8/ADE_train_00000001.pkl'
-
+def process_slic_path(slic_path: str, out_dir: str):
+    '''
+    Creates a SAM dict for each SLIC region in a SLIC assignment matrix and saves them to a JSON file.
+    Args:
+        slic_path (str): Path to the pickle with the SLIC assignment matrix output by gen_superpixels.py
+        out_dir (str): Directory to save the SAM dicts to.
+    '''
     with open(slic_path, 'rb') as f:
         assignment = pickle.load(f)['assignment']
 
     image_id = os.path.splitext(os.path.basename(slic_path))[0]
-    dicts = assignment_to_sam_dict(assignment, image_id)
+    sam_dicts = assignment_to_sam_dicts(assignment, image_id)
+
+    with open(os.path.join(out_dir, f'{image_id}.json'), 'w') as f:
+        json.dump(sam_dicts, f)
+
+# %%
+if __name__ == '__main__':
+    in_dir = '/home/blume5/shared/slic/pascal/train/50_8/assignments'
+    out_dir = '/home/blume5/shared/slic/pascal/train/50_8/sam_regions'
+    n_jobs = 4
+
+    os.makedirs(out_dir, exist_ok=True)
+    slic_paths = [os.path.join(in_dir, basename) for basename in sorted(os.listdir(in_dir))]
+
+    if n_jobs > 1:
+        Parallel(n_jobs=n_jobs)(
+            delayed(process_slic_path)(slic_path, out_dir)
+            for slic_path in tqdm(slic_paths)
+        )
+    else:
+        for slic_path in tqdm(slic_paths):
+            process_slic_path(slic_path, in_dir, out_dir)
 # %%
