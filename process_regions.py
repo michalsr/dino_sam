@@ -1,36 +1,36 @@
-import torch 
-import pickle
-import os 
+import torch
+import os
 import numpy as np
-import json 
 from tqdm import tqdm
 from pycocotools import mask as mask_utils
-import torch  
-from PIL import Image 
+import torch
 import torchvision.transforms as T
-import itertools
-import math 
+import math
 import os
 import argparse
-import utils 
+import utils
 import torch.nn.functional as F
+import logging
+
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
 
 """
 Given extracted regions from SAM and image features, create feature vectors for each region using some method (eg. avg)
 """
 
 def region_features_vaw(args):
-    # 
-    # vaw might not use sam masks 
+    #
+    # vaw might not use sam masks
     #almost identical to region_features except no rle decoding
     image_id_to_mask = {}
     for f in tqdm(os.listdir(args.mask_dir)):
-        # listed by instanes not regions 
+        # listed by instanes not regions
         filename_extension = os.path.splitext(f)[1]
         try:
             regions = utils.open_file(os.path.join(args.mask_dir,f))
         except:
-            print(f)
+            logger.info(f)
 
         image_id = regions['image_id'].replace(filename_extension,'')
         if image_id not in image_id_to_mask:
@@ -42,8 +42,8 @@ def region_features_vaw(args):
     for i,image_id in enumerate(tqdm(image_id_to_mask)):
     #for i,f in enumerate(tqdm(all_feature_files,desc='Region features',total=len(all_feature_files))):
         features = utils.open_file(os.path.join(args.feature_dir,image_id+'.pkl'))
-        # file_name =f 
-        # ext = os.path.splitext(f)[1]  
+        # file_name =f
+        # ext = os.path.splitext(f)[1]
         all_region_features_in_image = []
         regions = image_id_to_mask[image_id]
         if len(regions) == 0:
@@ -56,7 +56,7 @@ def region_features_vaw(args):
         f,h,w = upsample_feature.size()
         for region in regions:
                 if 'mask' in list(region.keys()):
-                    # save instances 
+                    # save instances
                     region_feature = {}
                     region_feature['instance_id'] = region['instance_id']
                     if not os.path.exists(os.path.join(args.region_feature_dir,str(region['instance_id'])+'.pkl')):
@@ -69,20 +69,24 @@ def region_features_vaw(args):
 
 def region_features(args,image_id_to_sam):
     all_feature_files = [f for f in os.listdir(args.feature_dir) if os.path.isfile(os.path.join(args.feature_dir, f))]
-    for i,f in enumerate(tqdm(all_feature_files,desc='Region features',total=len(all_feature_files))):
-        features = utils.open_file(os.path.join(args.feature_dir,f))
-        file_name =f 
-        ext = os.path.splitext(f)[1]  
-        all_region_features_in_image = []
-        sam_regions = image_id_to_sam[file_name.replace(ext,'')]
-        # sam regions within an image all have the same total size 
-        new_h, new_w = mask_utils.decode(sam_regions[0]['segmentation']).shape
-        patch_length = args.dino_patch_length
-        padded_h, padded_w = math.ceil(new_h / patch_length) * patch_length, math.ceil(new_w / patch_length) * patch_length # Get the padded height and width
-        upsample_feature = torch.nn.functional.upsample(torch.from_numpy(features).cuda(),size=[padded_h,padded_w],mode='bilinear') # First interpolate to the padded size
-        upsample_feature = T.CenterCrop((new_h, new_w)) (upsample_feature).squeeze(dim = 0) # Apply center cropping to the original size
-        f,h,w = upsample_feature.size()
-        for region in sam_regions:
+    prog_bar = tqdm(all_feature_files)
+    for i,f in enumerate(prog_bar):
+        try:
+            prog_bar.set_description(f'Region features: {f}')
+            features = utils.open_file(os.path.join(args.feature_dir,f))
+            file_name = f
+            ext = os.path.splitext(f)[1]
+            all_region_features_in_image = []
+            sam_regions = image_id_to_sam[file_name.replace(ext,'')]
+            # sam regions within an image all have the same total size
+            new_h, new_w = mask_utils.decode(sam_regions[0]['segmentation']).shape
+            patch_length = args.dino_patch_length
+            padded_h, padded_w = math.ceil(new_h / patch_length) * patch_length, math.ceil(new_w / patch_length) * patch_length # Get the padded height and width
+            upsample_feature = torch.nn.functional.interpolate(torch.from_numpy(features).cuda(), size=[padded_h,padded_w],mode='bilinear') # First interpolate to the padded size
+            upsample_feature = T.CenterCrop((new_h, new_w)) (upsample_feature).squeeze(dim = 0) # Apply center cropping to the original size
+            f,h,w = upsample_feature.size()
+
+            for region in sam_regions:
                 sam_region_feature = {}
                 sam_region_feature['region_id'] = region['region_id']
                 sam_region_feature['area'] = region['area']
@@ -91,12 +95,21 @@ def region_features(args,image_id_to_sam):
                 features_in_sam = upsample_feature[:,r_1,r_2].view(f,-1).mean(1).cpu().numpy()
                 sam_region_feature['region_feature'] = features_in_sam
                 all_region_features_in_image.append(sam_region_feature)
-        utils.save_file(os.path.join(args.region_feature_dir,file_name.replace(ext,'.pkl')),all_region_features_in_image)
+
+            utils.save_file(os.path.join(args.region_feature_dir,file_name.replace(ext,'.pkl')),all_region_features_in_image)
+
+        # Catch cuda out of memory error
+        except torch.cuda.OutOfMemoryError as e:
+            if not args.skip_oom:
+                raise e
+
+            logger.warning(f'Caught CUDA out of memory error for {file_name}; skipping file')
+            torch.cuda.empty_cache()
 
 def load_all_regions(args):
     if len(os.listdir(args.mask_dir)) == 0:
         raise Exception(f"No regions found at {args.mask_dir}")
-    print(f"Loading region masks from {args.mask_dir}")
+    logger.info(f"Loading region masks from {args.mask_dir}")
     image_id_to_mask = {}
     for f in tqdm(os.listdir(args.mask_dir)):
         filename_extension = os.path.splitext(f)[1]
@@ -146,13 +159,21 @@ if __name__ == '__main__':
         help="If not using json sam regions"
     )
 
+    parser.add_argument(
+        "--skip_oom",
+        action="store_true",
+        help="If true, skip files that cause cuda out of memory error"
+    )
+
     args = parser.parse_args()
 
     if not args.use_sam:
-        print('Using instance masks')
+        logger.info('Using instance masks')
         region_features_vaw(args)
     else:
-        print('Using SAM masks')
+        logger.info('Using SAM masks')
         image_id_to_mask = load_all_regions(args)
         region_features(args,image_id_to_mask)
-    
+
+    logger.info('Done')
+
