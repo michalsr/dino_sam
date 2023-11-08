@@ -114,8 +114,10 @@ def get_sam_regions(args):
         base = os.path.basename(t)
         base = os.path.splitext(base)[0]
         save_base = os.path.join(args.output, base)
+
         if os.path.isfile(save_base+".json") and not args.benchmark:
             continue
+
         image = cv2.imread(t)
         if image is None:
             print(f"Could not load '{t}' as an image, skipping...")
@@ -138,7 +140,8 @@ def get_sam_regions(args):
             with open(save_file, "w") as f:
                 json.dump(masks, f)
 
-    print(f"Average time per image with {len(gen_times)} trials (seconds): {sum(gen_times)/len(gen_times)}")
+    if len(gen_times) > 0: # May not generate anything if everything already exists
+        print(f"Average time per image with {len(gen_times)} trials (seconds): {sum(gen_times)/len(gen_times)}")
 
     if args.convert_to_rle:
         # add region ids
