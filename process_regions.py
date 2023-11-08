@@ -68,8 +68,15 @@ def region_features_vaw(args):
 
 
 def region_features(args,image_id_to_sam):
+    # Get the intersection of the feature files and the sam regions
     all_feature_files = [f for f in os.listdir(args.feature_dir) if os.path.isfile(os.path.join(args.feature_dir, f))]
-    prog_bar = tqdm(all_feature_files)
+    feature_files_in_sam = [f for f in all_feature_files if os.path.splitext(f)[0] in image_id_to_sam]
+
+    features_minus_sam = set(all_feature_files) - set(feature_files_in_sam)
+    if len(features_minus_sam) > 0:
+        logger.warning(f'Found {len(features_minus_sam)} feature files that are not in the set of SAM region files: {features_minus_sam}')
+
+    prog_bar = tqdm(feature_files_in_sam)
     for i,f in enumerate(prog_bar):
         try:
             prog_bar.set_description(f'Region features: {f}')
@@ -78,25 +85,27 @@ def region_features(args,image_id_to_sam):
             ext = os.path.splitext(f)[1]
             all_region_features_in_image = []
             sam_regions = image_id_to_sam[file_name.replace(ext,'')]
-            # sam regions within an image all have the same total size
-            new_h, new_w = mask_utils.decode(sam_regions[0]['segmentation']).shape
-            patch_length = args.dino_patch_length
-            padded_h, padded_w = math.ceil(new_h / patch_length) * patch_length, math.ceil(new_w / patch_length) * patch_length # Get the padded height and width
-            upsample_feature = torch.nn.functional.interpolate(torch.from_numpy(features).cuda(), size=[padded_h,padded_w],mode='bilinear') # First interpolate to the padded size
-            upsample_feature = T.CenterCrop((new_h, new_w)) (upsample_feature).squeeze(dim = 0) # Apply center cropping to the original size
-            f,h,w = upsample_feature.size()
 
-            for region in sam_regions:
-                sam_region_feature = {}
-                sam_region_feature['region_id'] = region['region_id']
-                sam_region_feature['area'] = region['area']
-                sam_mask = mask_utils.decode(region['segmentation'])
-                r_1, r_2 = np.where(sam_mask == 1)
-                features_in_sam = upsample_feature[:,r_1,r_2].view(f,-1).mean(1).cpu().numpy()
-                sam_region_feature['region_feature'] = features_in_sam
-                all_region_features_in_image.append(sam_region_feature)
+            if len(sam_regions) > 0:
+                # sam regions within an image all have the same total size
+                new_h, new_w = mask_utils.decode(sam_regions[0]['segmentation']).shape
+                patch_length = args.dino_patch_length
+                padded_h, padded_w = math.ceil(new_h / patch_length) * patch_length, math.ceil(new_w / patch_length) * patch_length # Get the padded height and width
+                upsample_feature = torch.nn.functional.interpolate(torch.from_numpy(features).cuda(), size=[padded_h,padded_w],mode='bilinear') # First interpolate to the padded size
+                upsample_feature = T.CenterCrop((new_h, new_w)) (upsample_feature).squeeze(dim = 0) # Apply center cropping to the original size
+                f,h,w = upsample_feature.size()
 
-            utils.save_file(os.path.join(args.region_feature_dir,file_name.replace(ext,'.pkl')),all_region_features_in_image)
+                for region in sam_regions:
+                    sam_region_feature = {}
+                    sam_region_feature['region_id'] = region['region_id']
+                    sam_region_feature['area'] = region['area']
+                    sam_mask = mask_utils.decode(region['segmentation'])
+                    r_1, r_2 = np.where(sam_mask == 1)
+                    features_in_sam = upsample_feature[:,r_1,r_2].view(f,-1).mean(1).cpu().numpy()
+                    sam_region_feature['region_feature'] = features_in_sam
+                    all_region_features_in_image.append(sam_region_feature)
+
+            utils.save_file(os.path.join(args.region_feature_dir, file_name.replace(ext,'.pkl')), all_region_features_in_image)
 
         # Catch cuda out of memory error
         except torch.cuda.OutOfMemoryError as e:
