@@ -14,7 +14,13 @@ from PIL import Image
 from pycocotools import mask as mask_utils
 from gen_superpixels import img_from_superpixels
 from sam_analysis.visualize_sam import image_from_masks, show, masks_to_boundaries
-from einops import rearrange, reduce
+from tqdm import tqdm
+from einops import rearrange
+from to_sam_format import stacked_masks_to_sam_dicts
+
+import coloredlogs, logging
+logger = logging.getLogger(__name__)
+coloredlogs.install(level='INFO', logger=logger)
 
 def get_unmasked_slic_regions(slic_assignment: torch.IntTensor, sam_masks: torch.BoolTensor, min_proportion: float = 0., min_pixels: int = 0) -> torch.BoolTensor:
     '''
@@ -52,6 +58,10 @@ def get_unmasked_slic_regions(slic_assignment: torch.IntTensor, sam_masks: torch
     return torch.stack(slic_regions) # (n,h,w)
 
 def get_merged_sam_and_slic_regions(unmasked_slic_regions: torch.BoolTensor, sam_masks: torch.BoolTensor):
+    '''
+    Merge the SLIC regions which have nonempty intersection with unmasked regions of an image, then stack them with the
+    SAM masks.
+    '''
     # Check if all SLIC regions got filtered out
     if len(unmasked_slic_regions) == 1 and not unmasked_slic_regions.any():
         return sam_masks
@@ -83,16 +93,25 @@ if __name__ == '__main__':
     # img_dir = '/shared/rsaas/dino_sam/data/VOCdevkit/VOC2012/JPEGImages'
 
     ## ADE20K
-    sam_dir = '/shared/rsaas/dino_sam/sam_output/ADE20K/train'
-    slic_dir = '/home/blume5/shared/slic_50_8/ade20k/assignments/train'
-    img_dir = '/shared/rsaas/dino_sam/data/ADE20K/images/training'
+    sam_dir = '/shared/rsaas/dino_sam/sam_output/ADE20K/train' # SAM masks to merge with the SLIC regions
+    slic_dir = '/home/blume5/shared/slic_50_8/ade20k/assignments/train' # SLIC regions to merge with the SAM masks
+    img_dir = '/shared/rsaas/dino_sam/data/ADE20K/images/training' # Images to visualize the merged regions on
+
+    sam_output_dir = '/home/blume5/shared/sam_slic_50_8/ade20k/sam_regions/train' # Where to save the SAM + SLIC output as SAM output JSONs
 
     min_proportion = 0
     min_pixels = 300
 
-    for mask_basename in sorted(os.listdir(sam_dir))[5:11]:
+    device = 'cpu'
+
+    os.makedirs(sam_output_dir, exist_ok=True)
+    for mask_basename in tqdm(sorted(os.listdir(sam_dir))):
         mask_path = os.path.join(sam_dir, mask_basename) # JSON
         slic_path = os.path.join(slic_dir, os.path.splitext(mask_basename)[0] + '.pkl')
+
+        if not os.path.exists(slic_path):
+            logger.warning(f'No SLIC assignment found at {slic_path}. Skipping.')
+            continue
 
         # Load SAM masks
         with open(mask_path, 'r') as f:
@@ -100,32 +119,40 @@ if __name__ == '__main__':
 
         sam_masks = torch.tensor(
             np.stack([mask_utils.decode(mask['segmentation']) for mask in sam_masks])
-        , dtype=torch.bool) # (n,h,w)
+        , dtype=torch.bool, device=device) # (n,h,w)
 
         # Load SLIC regions
         with open(slic_path, 'rb') as f:
-            slic_assignment = torch.tensor(pickle.load(f)['assignment'])
+            slic_assignment = torch.tensor(pickle.load(f)['assignment'], device=device)
 
+        # Merge SLIC with SAM
         unmasked_slic_regions = get_unmasked_slic_regions(slic_assignment, sam_masks, min_proportion=min_proportion, min_pixels=min_pixels)
-        merged_slic_and_sam_regions = get_merged_sam_and_slic_regions(unmasked_slic_regions, sam_masks)
+        merged_slic_and_sam_regions = get_merged_sam_and_slic_regions(unmasked_slic_regions, sam_masks).cpu()
+
+        # Dump merged regions to SAM output file
+        image_id = os.path.splitext(mask_basename)[0]
+        sam_dicts = stacked_masks_to_sam_dicts(merged_slic_and_sam_regions.numpy(), image_id)
+
+        with open(os.path.join(sam_output_dir, f'{image_id}.json'), 'w') as f:
+            json.dump(sam_dicts, f)
 
         # Visualize SAM masks and SLIC regions
         # Load image
-        img_path = os.path.join(img_dir, os.path.splitext(mask_basename)[0] + '.jpg')
-        with Image.open(img_path) as f:
-            img = rearrange(torch.tensor(np.array(f)), 'h w c -> c h w')
+        # img_path = os.path.join(img_dir, os.path.splitext(mask_basename)[0] + '.jpg')
+        # with Image.open(img_path) as f:
+        #     img = rearrange(torch.tensor(np.array(f)), 'h w c -> c h w')
 
-        masked_regions_img = image_from_masks(sam_masks, superimpose_on_image=img) # SAM mask regions
-        unmasked_regions_img = sam_masks.any(dim=0).logical_not().int() # Regions unmasked by SAM
-        superpixel_assignment_img = img_from_superpixels(img, slic_assignment) # Superpixel assignment
-        slic_covering_unmasked_img = image_from_masks(unmasked_slic_regions, superimpose_on_image=img) # SLIC covering unmasked regions
-        slic_and_sam_img = image_from_slic_and_sam(img, sam_masks, unmasked_slic_regions) # SLIC covering unmasked regions + SAM masks
+        # masked_regions_img = image_from_masks(sam_masks, superimpose_on_image=img) # SAM mask regions
+        # unmasked_regions_img = sam_masks.any(dim=0).logical_not().int() # Regions unmasked by SAM
+        # superpixel_assignment_img = img_from_superpixels(img, slic_assignment) # Superpixel assignment
+        # slic_covering_unmasked_img = image_from_masks(unmasked_slic_regions, superimpose_on_image=img) # SLIC covering unmasked regions
+        # slic_and_sam_img = image_from_slic_and_sam(img, sam_masks, unmasked_slic_regions) # SLIC covering unmasked regions + SAM masks
 
-        slic_intersect_unmasked = unmasked_slic_regions.any(dim=0) * unmasked_regions_img.bool()
-        slic_and_sam_smooth_img = image_from_slic_and_sam(img, sam_masks, slic_intersect_unmasked.unsqueeze(0)) # SLIC intersect unmasked regions + SAM masks
+        # slic_intersect_unmasked = unmasked_slic_regions.any(dim=0) * unmasked_regions_img.bool()
+        # slic_and_sam_smooth_img = image_from_slic_and_sam(img, sam_masks, slic_intersect_unmasked.unsqueeze(0)) # SLIC intersect unmasked regions + SAM masks
 
-        slic_and_sam_smooth_split_img = image_from_masks(merged_slic_and_sam_regions, superimpose_on_image=img) # SLIC intersect unmasked regions, split into superpixels, + SAM masks
-        remaining_unmasked = merged_slic_and_sam_regions.any(dim=0).logical_not().int()
+        # slic_and_sam_smooth_split_img = image_from_masks(merged_slic_and_sam_regions, superimpose_on_image=img) # SLIC intersect unmasked regions, split into superpixels, + SAM masks
+        # remaining_unmasked = merged_slic_and_sam_regions.any(dim=0).logical_not().int()
 
         # show(masked_regions_img)
         # show(unmasked_regions_img)
@@ -137,18 +164,20 @@ if __name__ == '__main__':
         # show(slic_and_sam_smooth_split_img)
         # show(remaining_unmasked)
 
-        show(
-            [img, unmasked_regions_img, superpixel_assignment_img, slic_covering_unmasked_img, slic_and_sam_smooth_split_img, remaining_unmasked],
-            subplot_titles=[
-                'Original image',
-                'Unmasked regions',
-                'Superpixel assignment',
-                'Superpixels covering\nunmasked regions',
-                'Full Segmentation\n(SLIC + SAM)',
-                'Remaining unmasked'
-            ],
-            nrows=2,
-            fig_kwargs={'figsize': (15, 8.5)}
-        )
+        # show(
+        #     [img, unmasked_regions_img, superpixel_assignment_img, slic_covering_unmasked_img, slic_and_sam_smooth_split_img, remaining_unmasked],
+        #     subplot_titles=[
+        #         'Original image',
+        #         'Unmasked regions',
+        #         'Superpixel assignment',
+        #         'Superpixels covering\nunmasked regions',
+        #         'Full Segmentation\n(SLIC + SAM)',
+        #         'Remaining unmasked'
+        #     ],
+        #     nrows=2,
+        #     fig_kwargs={'figsize': (15, 8.5)}
+        # )
+
+    print('Done.')
 
 # %%
