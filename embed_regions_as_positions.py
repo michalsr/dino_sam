@@ -219,7 +219,7 @@ def parse_args(cl_args: List[str] = None):
     parser.add_argument('--chunk_size', type=int, default=50,
                         help='Number of SAM masks to compute embeddings for at a time. Runs out of memory on CPU if too large and scaling_method is upscale.')
 
-    parser.add_argument('--scaling_method', choices=[m.value for m in ScalingMethod], default='downscale_sam_masks',
+    parser.add_argument('--scaling_method', choices=[m.value for m in ScalingMethod], default='upscale_pos_embeds',
                         help='Method for scaling to match the positional embedding size to the image size')
 
     args = parser.parse_args(cl_args)

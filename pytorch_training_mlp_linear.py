@@ -5,7 +5,7 @@ from typing import List
 from pycocotools import mask as mask_utils
 # from einops import rearrange, reduce
 import torch
-import einops 
+import einops
 import numpy as np
 import torch.nn.functional as F
 from utils import mean_iou
@@ -24,7 +24,7 @@ import os
 from torch.utils.data import DataLoader, TensorDataset
 from sklearn.metrics import accuracy_score
 from torch.utils.data import Dataset, DataLoader
-import utils 
+import utils
 import torchvision
 
 import sys
@@ -34,7 +34,7 @@ from typing import List
 from pycocotools import mask as mask_utils
 # from einops import rearrange, reduce
 import torch
-import einops 
+import einops
 import numpy as np
 import torch.nn.functional as F
 from utils import mean_iou
@@ -53,17 +53,17 @@ import os
 from torch.utils.data import DataLoader, TensorDataset
 from sklearn.metrics import accuracy_score
 from torch.utils.data import Dataset, DataLoader
-import utils 
-import torchvision 
+import utils
+import torchvision
 '''
-Use transformer to classify regions 
+Use transformer to classify regions
 '''
 
 def get_all_features(region_feat_dir, region_labels_dir,pos_embd_dir,data_file):
     if os.path.exists(data_file):
         data = utils.open_file(data_file)
         return np.stack(data['features']),np.stack(data['labels']),np.stack(data['weight'])
-    
+
     all_feats = []
     all_labels = []
     all_weight = []
@@ -71,40 +71,46 @@ def get_all_features(region_feat_dir, region_labels_dir,pos_embd_dir,data_file):
     for file_name in tqdm(os.listdir(region_feat_dir)):        
         region_feats = utils.open_file(os.path.join(region_feat_dir,file_name))
         labels = utils.open_file(os.path.join(region_labels_dir,file_name))
-        # pos_embd = utils.open_file(os.path.join(pos_embd_dir,file_name))
+
+        if pos_embd_dir is not None:
+            pos_embd = utils.open_file(os.path.join(pos_embd_dir,file_name))
+
         for i,region in enumerate(region_feats):
-            # area_feature = region['region_feature']+pos_embd[i,:]
-            area_feature = region['region_feature']
+            if pos_embd_dir is None:
+                area_feature = region['region_feature']
+            else:
+                area_feature = region['region_feature']+pos_embd[i,:]
+
             area_label = labels[i]['labels']
             area_weight = region['area']
             target_label = list(area_label.keys())[0]
 
             if area_label[target_label] == 1:
                 if target_label == 0:
-                    break 
+                    break
                 else:
                     all_feats.append(area_feature)
                     if 'ade' in args.dataset_name.lower():
-                
+
                         all_labels.append(target_label-1)
                     else:
                         all_labels.append(target_label)
                     all_weight.append(area_weight)
-    
+
     utils.save_file(data_file,{'features':all_feats,'labels':all_labels,'weight':all_weight})
     return np.stack(all_feats), np.stack(all_labels),np.stack(all_weight)
 
 
 
 class FeatureDataset(Dataset):
-    # load region features, add positional encoding and get region labels 
+    # load region features, add positional encoding and get region labels
     def __init__(self,region_feat_dir, region_labels_dir,pos_embd_dir,data_file):
         super().__init__()
         region_feats,region_labels,weight = get_all_features(region_feat_dir, region_labels_dir,pos_embd_dir,data_file)
-        self.region_feats = region_feats 
-        self.labels = region_labels 
+        self.region_feats = region_feats
+        self.labels = region_labels
         self.weight = weight
-        
+
 
     def __len__(self):
         return len(self.region_feats)
@@ -129,13 +135,13 @@ def eval_acc(args,model,epoch):
             region_feats, labels, weight= data
             total_regions += len(labels)
             model = model.cuda()
-   
+
             labels = labels.cuda()
             region_feats = region_feats.cuda()
             outputs = model(region_feats)
-          
+
             outputs = outputs.squeeze()
-          
+
 
             # Reshape outputs and labels for loss calculation
             outputs = outputs.view(-1, args.num_classes)
@@ -146,18 +152,18 @@ def eval_acc(args,model,epoch):
 
             loss = criterion(outputs, labels)
             all_loss+=(loss.item())
-     
-           
-    val_loss = all_loss/total_regions 
+
+
+    val_loss = all_loss/total_regions
     print(f'Val loss:{val_loss}')
     predictions = torch.stack(predictions)
     all_labels = torch.stack(all_labels)
-    print(predictions.shape,all_labels.shape)
+    # print(predictions.shape,all_labels.shape)
     val_acc = mca(predictions.squeeze(),all_labels.squeeze())
     print(f'Val acc:{val_acc.item()}')
     return val_loss,val_acc.item()
 
-       
+
 def train_model(args):
     dataset = FeatureDataset(region_feat_dir=args.train_region_feature_dir,region_labels_dir=args.train_region_labels_dir,pos_embd_dir=args.train_pos_embd_dir,data_file=args.train_data_file)
     if args.model == 'linear':
@@ -172,11 +178,12 @@ def train_model(args):
     mca = MulticlassAccuracy(num_classes=args.num_classes, average='micro',top_k=1)
     # batch is over total number of regions so can make it very large (8192)
     dataloader = torch.utils.data.DataLoader(dataset,batch_size=args.batch_size,shuffle=True)
+    print(f'Train dataloader length with batch size {args.batch_size}: {len(dataloader)}')
     train_outputs = []
     train_labels = []
     total_regions = 0
     for epoch in range(epochs):  # Example number of epochs
-        batch_loss = 0 
+        batch_loss = 0
         model = model.cuda()
         model.train()
         num_regions = 0
@@ -187,10 +194,10 @@ def train_model(args):
             num_regions += len(labels)
             region_feats = region_feats.cuda()
             labels = labels.cuda()
-            
+
             outputs = model(region_feats)
             outputs = outputs.squeeze()
-          
+
             outputs = outputs.view(-1, args.num_classes)
 
             labels = labels.view(-1)
@@ -209,7 +216,7 @@ def train_model(args):
 
 
         print(f"Epoch {epoch + 1}, Loss: {loss.item()}")
-         
+
         if not os.path.exists(args.save_dir):
             os.makedirs(args.save_dir)
         torch.save(model.cpu().state_dict(),os.path.join(args.save_dir,'model.pt'))
@@ -226,27 +233,29 @@ def train_model(args):
 
 
 def eval_model(args):
-    dataset = FeatureDataset(region_feat_dir=args.val_region_feature_dir,region_labels_dir=args.val_region_labels_dir,pos_embd_dir=args.val_pos_embd_dir,data_file=args.val_data_file)
     if args.model == 'linear':
         model = torch.nn.Linear(args.input_channels,args.num_classes)
     else:
         model = torchvision.ops.MLP(in_channels=args.input_channels,hidden_channels=[args.hidden_channels,args.num_classes])
 
-   
     model.load_state_dict(torch.load(os.path.join(args.save_dir,'model.pt')))
     model.eval()
     class_preds = []
     model = model.cuda()
     all_pixel_predictions = []
-    # keep track of oroder of predictions 
+    # keep track of order of predictions
     file_names = []
     val_features = args.val_region_feature_dir
+    print('val features dir: ', val_features)
     softmax = torch.nn.Softmax(dim=1)
     val_files = [filename for filename in os.listdir(val_features)]
     for file in tqdm(val_files):
         file_names.append(file)
         all_sam = utils.open_file(os.path.join(args.sam_dir,file.replace('.pkl','.json')))
-        # pos_embd = utils.open_file(os.path.join(args.val_pos_embd_dir,file))
+
+        if args.val_pos_embd_dir is not None:
+            pos_embd = utils.open_file(os.path.join(args.val_pos_embd_dir,file))
+
         all_regions = []
         region_order = []
         for i, region in enumerate(all_sam):
@@ -256,80 +265,95 @@ def eval_model(args):
         region_features = utils.open_file(os.path.join(val_features,file))
         feature_all = []
         for j,area in enumerate(region_features):
-            # feature_all.append(area['region_feature']+pos_embd[i,:])
-            feature_all.append(area['region_feature'])
-        
-        
+            if args.val_pos_embd_dir is None:
+                features = area['region_feature']
+            else:
+                features = area['region_feature'] + pos_embd[i,:]
+
+            feature_all.append(features)
+
         region_all = {area['region_id']:j for j,area in enumerate(region_features)}
         # track region id
         region_idx = [region_all[r] for r in region_order]
-        
+
+        if len(feature_all) == 0: # There were no predicted regions; use None as a flag
+            all_pixel_predictions.append(None)
+            continue
+
         features = torch.tensor(np.stack(feature_all))
         features = features[region_idx,:]
+
         predictions = torch.zeros((len(feature_all),args.num_classes))
         with torch.no_grad():
             for i in range(len(feature_all)):
                 feats = features[i,:]
-                
+
                 model = model.cuda()
-               
+
                 feats = feats.cuda().unsqueeze(0)
-                
+
                 output = model(feats)
-                predictions[i,:] = output.cpu() 
+                predictions[i,:] = output.cpu()
+
         if 'after_softmax' in args.multi_region_pixels:
-  
             # averaging softmax values for pixels in multiple regions
             class_predictions = softmax(predictions)
         else:
-            # use logits for predictions 
-            class_predictions = predictions 
-        num_regions, num_classes = class_predictions.size() 
+            # use logits for predictions
+            class_predictions = predictions
+
+        num_regions, num_classes = class_predictions.size()
 
         all_regions = torch.from_numpy(np.stack(all_regions,axis=-1))
         class_predictions = class_predictions.cuda()
         h,w,num_regions = all_regions.size()
-        
+
         #find pixels where at least one mask equals one
         mask_sum = torch.sum(all_regions,dim=-1)
-   
+
         mask_sum = mask_sum.cuda()
         nonzero_mask = torch.nonzero(mask_sum,as_tuple=True)
-        
+
         all_regions = all_regions.cuda()
-        
+
         nonzero_regions = all_regions[nonzero_mask[0],nonzero_mask[1],:]
         product = torch.matmul(nonzero_regions, class_predictions)
-     
+
         # want avg across softmax values, need to get number of regions summed for each pixel
-        # repeat number of regions across softmax values 
+        # repeat number of regions across softmax values
 
         divide = torch.repeat_interleave(mask_sum[nonzero_mask[0],nonzero_mask[1],None],num_classes,dim=1)
 
         nonzero_region_pixel_preds = torch.divide(product,divide)
-      
+
         if 'before_softmax' in args.multi_region_pixels:
             nonzero_region_pixel_preds = softmax(nonzero_region_pixel_preds,dim=1)
         top_pred = torch.argmax(nonzero_region_pixel_preds,dim=1).cpu().numpy()
         final_pixel_pred = np.zeros((h,w))
-        
+
         # index back into original shape
         final_pixel_pred[nonzero_mask[0].cpu().numpy(),nonzero_mask[1].cpu().numpy()] = top_pred
         all_pixel_predictions.append(final_pixel_pred)
-    return all_pixel_predictions, file_names 
+    return all_pixel_predictions, file_names
 
 def compute_iou(args,predictions,file_names,epoch):
     actual_labels = []
     for file in tqdm(file_names):
         actual = np.array(Image.open(os.path.join(args.annotation_dir,file.replace('.pkl','.png'))))
         actual_labels.append(actual)
+
+    # Handle predictions where there were no regions
+    predictions = [np.full(actual.shape, 255) if p is None else p for p, actual in zip(predictions, actual_labels)]
+
     if args.ignore_zero:
-        num_classes = args.num_classes -1 
+        num_classes = args.num_classes -1
         reduce_labels = True
+
     else:
-        num_classes = args.num_classes 
+        num_classes = args.num_classes
         reduce_labels = False
-    num_classes = args.num_classes -1 
+
+    num_classes = args.num_classes -1
     reduce_labels = True
     miou = mean_iou(results=predictions,gt_seg_maps=actual_labels,num_labels=num_classes,ignore_index=255,reduce_labels=reduce_labels)
     print(miou)
@@ -413,14 +437,14 @@ if __name__ == '__main__':
         help="No classifier training"
     )
     parser.add_argument("--dataset_name",type=str,default='ade')
-  
+
     parser.add_argument(
         "--lr",
         type=float,
         default=.0001,
         help="learning rate"
     )
-  
+
     parser.add_argument(
         "--sam_dir",
         type=str,
@@ -487,19 +511,6 @@ if __name__ == '__main__':
         default=384,
         help="input channel size depending on models"
     )
-    
+
     args = parser.parse_args()
     train_and_evaluate(args)
-
-    
-    
-
-    
-
-
-
-
-
-    
-
-    

@@ -1,10 +1,11 @@
 # %%
 # See https://pytorch.org/vision/main/auto_examples/others/plot_repurposing_annotations.html
-
+import os
+import sys
+sys.path.append(os.path.realpath(os.path.join(os.path.dirname(__file__), '..')))
 import numpy as np
 import matplotlib.pyplot as plt
 import torchvision.transforms.functional as F
-import os
 from torchvision.io import read_image
 from pycocotools import mask as mask_utils
 from torchvision.utils import draw_segmentation_masks
@@ -21,27 +22,27 @@ def show(
     title_y: float = 1,
     subplot_titles: List[str] = None,
     nrows: int = 1,
+    fig_kwargs: dict = {}
 ):
     if not isinstance(imgs, list):
         imgs = [imgs]
 
-    ncols = len(imgs) // nrows
-    fig, axs = plt.subplots(nrows=nrows, ncols=ncols, squeeze=False)
+    ncols = int(np.ceil(len(imgs) / nrows))
+    fig, axs = plt.subplots(nrows=nrows, ncols=ncols, squeeze=False, **fig_kwargs)
     fig.tight_layout()
 
-    for i, img in enumerate(imgs):
-        row = i // ncols
-        col = i % ncols
+    for i, ax in enumerate(axs.flatten()):
+        if i < len(imgs):
+            img = F.to_pil_image(imgs[i].detach().cpu())
+            ax.imshow(np.asarray(img))
+            ax.set(xticklabels=[], yticklabels=[], xticks=[], yticks=[])
 
-        img = img.detach()
-        img = F.to_pil_image(img)
+            # Set titles for each individual subplot
+            if subplot_titles and i < len(subplot_titles):
+                ax.set_title(subplot_titles[i])
 
-        axs[row, col].imshow(np.asarray(img))
-        axs[row, col].set(xticklabels=[], yticklabels=[], xticks=[], yticks=[])
-
-        # Set titles for each individual subplot
-        if subplot_titles and i < len(subplot_titles):
-            axs[row, col].set_title(subplot_titles[i])
+        else: # Hide subplots with no images
+            ax.set_visible(False)
 
     if title:
         fig.suptitle(title, y=title_y)
@@ -105,6 +106,36 @@ def image_from_masks(
     masks = draw_segmentation_masks(background, masks, colors=colors, alpha=alpha)
 
     return masks
+
+def masks_to_boundaries(masks: torch.Tensor):
+    '''
+    Given a set of masks, return a set of masks of the boundary pixels.
+
+    masks: (n,h,w)
+    Returns: (n,h,w) boolean tensor of boundary pixels
+    '''
+    # Convert masks to boolean and zero pad the masks to have regions on image edges
+    # use the edges as boundaries
+    masks = masks.bool()
+    masks_padded = torch.nn.functional.pad(masks, (1, 1, 1, 1))
+
+    # Initialize the boundaries tensor with the same size as the padded masks
+    boundaries = torch.zeros_like(masks_padded)
+
+    # Compute boundaries, only considering the boundaries of True values
+    center = masks_padded[:, 1:-1, 1:-1] # Values in the unpadded image
+
+    boundaries[:, 1:-1, 1:-1] = ( # Assign to original image region
+        (center & (center != masks_padded[:, :-2, 1:-1])).float() + # Check if the center is True and the pixel to the left is False
+        (center & (center != masks_padded[:, 2:, 1:-1])).float() + # Check if the center is True and the pixel to the right is False
+        (center & (center != masks_padded[:, 1:-1, :-2])).float() + # Check if the center is True and the pixel above is False
+        (center & (center != masks_padded[:, 1:-1, 2:])).float() # Check if the center is True and the pixel below is False
+    ) > 0
+
+    # Remove the padding from the boundaries tensor to match the original size
+    boundaries = boundaries[:, 1:-1, 1:-1]
+
+    return boundaries
 
 def compare_model_outputs(
     img_name: str,
