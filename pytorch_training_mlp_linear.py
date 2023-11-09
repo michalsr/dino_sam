@@ -68,12 +68,13 @@ def get_all_features(region_feat_dir, region_labels_dir,pos_embd_dir,data_file):
     all_labels = []
     all_weight = []
     print('Loading features')
-    for file_name in tqdm(os.listdir(region_feat_dir)):
+    for file_name in tqdm(os.listdir(region_feat_dir)):        
         region_feats = utils.open_file(os.path.join(region_feat_dir,file_name))
         labels = utils.open_file(os.path.join(region_labels_dir,file_name))
-        pos_embd = utils.open_file(os.path.join(pos_embd_dir,file_name))
+        # pos_embd = utils.open_file(os.path.join(pos_embd_dir,file_name))
         for i,region in enumerate(region_feats):
-            area_feature = region['region_feature']+pos_embd[i,:]
+            # area_feature = region['region_feature']+pos_embd[i,:]
+            area_feature = region['region_feature']
             area_label = labels[i]['labels']
             area_weight = region['area']
             target_label = list(area_label.keys())[0]
@@ -160,9 +161,9 @@ def eval_acc(args,model,epoch):
 def train_model(args):
     dataset = FeatureDataset(region_feat_dir=args.train_region_feature_dir,region_labels_dir=args.train_region_labels_dir,pos_embd_dir=args.train_pos_embd_dir,data_file=args.train_data_file)
     if args.model == 'linear':
-        model = torch.nn.Linear(1024,args.num_classes)
+        model = torch.nn.Linear(args.input_channels,args.num_classes)
     else:
-        model = torchvision.ops.MLP(in_channels=1024,hidden_channels=[args.hidden_channels,args.num_classes])
+        model = torchvision.ops.MLP(in_channels=args.input_channels,hidden_channels=[args.hidden_channels,args.num_classes])
 
     eval_acc(args,model,1)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
@@ -227,9 +228,9 @@ def train_model(args):
 def eval_model(args):
     dataset = FeatureDataset(region_feat_dir=args.val_region_feature_dir,region_labels_dir=args.val_region_labels_dir,pos_embd_dir=args.val_pos_embd_dir,data_file=args.val_data_file)
     if args.model == 'linear':
-        model = torch.nn.Linear(1024,args.num_classes)
+        model = torch.nn.Linear(args.input_channels,args.num_classes)
     else:
-        model = torchvision.ops.MLP(in_channels=1024,hidden_channels=[args.hidden_channels,args.num_classes])
+        model = torchvision.ops.MLP(in_channels=args.input_channels,hidden_channels=[args.hidden_channels,args.num_classes])
 
    
     model.load_state_dict(torch.load(os.path.join(args.save_dir,'model.pt')))
@@ -245,7 +246,7 @@ def eval_model(args):
     for file in tqdm(val_files):
         file_names.append(file)
         all_sam = utils.open_file(os.path.join(args.sam_dir,file.replace('.pkl','.json')))
-        pos_embd = utils.open_file(os.path.join(args.val_pos_embd_dir,file))
+        # pos_embd = utils.open_file(os.path.join(args.val_pos_embd_dir,file))
         all_regions = []
         region_order = []
         for i, region in enumerate(all_sam):
@@ -255,7 +256,8 @@ def eval_model(args):
         region_features = utils.open_file(os.path.join(val_features,file))
         feature_all = []
         for j,area in enumerate(region_features):
-            feature_all.append(area['region_feature']+pos_embd[i,:])
+            # feature_all.append(area['region_feature']+pos_embd[i,:])
+            feature_all.append(area['region_feature'])
         
         
         region_all = {area['region_id']:j for j,area in enumerate(region_features)}
@@ -479,6 +481,13 @@ if __name__ == '__main__':
         default=512,
         help="hidden channel size if used"
     )
+    parser.add_argument(
+        "--input_channels",
+        type=int,
+        default=384,
+        help="input channel size depending on models"
+    )
+    
     args = parser.parse_args()
     train_and_evaluate(args)
 
