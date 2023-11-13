@@ -199,18 +199,38 @@ class RegionEmbeddingGenerator:
         bin_sam_masks = resampled_sam_masks.to(torch.bool) # Should already be binary, but just in case. (nmasks, npatches_h, npatches_w)
         bin_sam_mask_chunks = torch.split(bin_sam_masks, chunk_size, dim=0)
 
-        all_mask_embeds = []
-        for bin_sam_mask_chunk in bin_sam_mask_chunks:
+        def get_mask_embeds_chunk(resampled_pos_embeds, bin_sam_mask_chunk):
             masked_pos_embeds_chunk = resampled_pos_embeds * bin_sam_mask_chunk.unsqueeze(-1) # (nmasks_or_chunk_size, npatches_h_or_h, npatches_w_or_w, dim)
             mask_embeds_chunk = reduce(masked_pos_embeds_chunk, 'n h w d -> n d', 'sum') # (nmasks_or_chunk_size, dim); sum masked embeddings over patches
             mask_embeds_chunk = mask_embeds_chunk / reduce(bin_sam_mask_chunk, 'n h w -> n', 'sum').unsqueeze(-1) # (nmasks_or_chunk_size, dim); divide by number of summed nonzero embeddings
+
+            return mask_embeds_chunk
+
+        all_mask_embeds = []
+        failed_on_cuda = False
+        for bin_sam_mask_chunk in bin_sam_mask_chunks:
+            try:
+                if failed_on_cuda: # We already failed on CUDA for this image, and image isn't getting any smaller
+                    bin_sam_mask_chunk = bin_sam_mask_chunk.cpu()
+
+                mask_embeds_chunk = get_mask_embeds_chunk(resampled_pos_embeds, bin_sam_mask_chunk)
+
+            except torch.cuda.OutOfMemoryError:
+                logger.warning('Caught CUDA out of memory error. Trying again with CPU.')
+                failed_on_cuda = True
+                torch.cuda.empty_cache()
+
+                bin_sam_mask_chunk = bin_sam_mask_chunk.cpu()
+                resampled_pos_embeds = resampled_pos_embeds.cpu() # This will persist for future chunks
+
+                mask_embeds_chunk = get_mask_embeds_chunk(resampled_pos_embeds, bin_sam_mask_chunk)
+
             all_mask_embeds.append(mask_embeds_chunk)
 
         return torch.cat(all_mask_embeds, dim=0) # (nmasks, dim)
 
 def parse_args(cl_args: List[str] = None):
     parser = argparse.ArgumentParser()
-    parser.add_argument('--feature_dir', help='Location of extracted DinoV2 features')
     parser.add_argument('--sam_dir', help='Location of SAM masks')
     parser.add_argument('--output_dir', help='Where to save the SAM region embeddings')
     parser.add_argument('--dino_model', default='dinov2_vitl14', help='DinoV2 model used to generate the image features')
@@ -221,6 +241,7 @@ def parse_args(cl_args: List[str] = None):
 
     parser.add_argument('--scaling_method', choices=[m.value for m in ScalingMethod], default='upscale_pos_embeds',
                         help='Method for scaling to match the positional embedding size to the image size')
+    parser.add_argument('--feature_dir', default=None, help='Location of extracted DinoV2 features. Necessary if scaling_method is downscale_sam_masks')
 
     args = parser.parse_args(cl_args)
 
@@ -285,15 +306,15 @@ def gen_embeddings_for_masks(sam_basename: str, dino, padder, args: argparse.Nam
 
 # %%
 if __name__ == '__main__':
-    args = parse_args([
-        '--feature_dir', '/shared/rsaas/dino_sam/features/dinov2/ADE20K/train',
-        '--sam_dir', '/shared/rsaas/dino_sam/sam_output/ADE20K/train',
-        '--output_dir', '/shared/rsaas/dino_sam/sam_region_embeddings/ADE20K/train_upscale',
-        '--device', 'cuda',
-        '--n_jobs', '1',
-        '--chunk_size', '1',
-        '--scaling_method', 'upscale_pos_embeds'
-    ])
+    # args = parse_args([
+    #     '--sam_dir', '/shared/rsaas/dino_sam/sam_output/ADE20K/train',
+    #     '--output_dir', '/shared/rsaas/dino_sam/sam_region_embeddings/ADE20K/train_upscale',
+    #     '--device', 'cuda',
+    #     '--n_jobs', '1',
+    #     '--chunk_size', '1',
+    #     '--scaling_method', 'upscale_pos_embeds'
+    # ])
+    args = parse_args()
 
     if args.device == 'cuda':
         logger.warning(
@@ -318,7 +339,7 @@ if __name__ == '__main__':
 
     prog_bar = tqdm(sorted(os.listdir(args.sam_dir)))
 
-    if args.n_jobs > 1:
+    if args.n_jobs > 1: # NOTE: this parallelized version will NOT continue where we left off and WILL overwrite
         Parallel(n_jobs=args.n_jobs, backend='threading')(
             delayed(gen_embeddings_for_masks)(sam_basename, dino, padder, args)
             for sam_basename in prog_bar
@@ -329,10 +350,9 @@ if __name__ == '__main__':
             prog_bar.set_description(sam_basename)
             target_path = os.path.join(args.output_dir, sam_basename.replace('.json', '.pkl'))
 
-            if os.path.exists(target_path):
+            if os.path.exists(target_path): # Continue where we left off and don't overwrite
                 continue
 
-            # TODO Try to generate on GPU, then fallback to CPU if it fails with OutOfMemory
             gen_embeddings_for_masks(sam_basename, dino, padder, args)
 
     # %% Testing code
