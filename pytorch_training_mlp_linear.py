@@ -68,7 +68,7 @@ def get_all_features(region_feat_dir, region_labels_dir,pos_embd_dir,data_file):
     all_labels = []
     all_weight = []
     print('Loading features')
-    for file_name in tqdm(os.listdir(region_feat_dir)):        
+    for file_name in tqdm(os.listdir(region_feat_dir)):
         region_feats = utils.open_file(os.path.join(region_feat_dir,file_name))
         labels = utils.open_file(os.path.join(region_labels_dir,file_name))
 
@@ -362,9 +362,21 @@ def compute_iou(args,predictions,file_names,epoch):
 def train_and_evaluate(args):
     if not args.eval_only:
         train_model(args)
-    all_pixel_predictions, file_names = eval_model(args)
-    compute_iou(args,all_pixel_predictions,file_names,args.epochs)
 
+    all_pixel_predictions, file_names = eval_model(args)
+
+    # Save pixel predictions as PNGs for use on evaluation server
+    if args.output_predictions:
+        print('Saving predictions to PNGs')
+        prediction_dir = os.path.join(args.results_dir, 'predictions')
+        os.makedirs(prediction_dir, exist_ok=True)
+
+        for file_name, prediction in tqdm(zip(file_names, all_pixel_predictions)):
+            prediction = Image.fromarray(prediction.astype(np.uint8))
+            prediction.save(os.path.join(prediction_dir, file_name.replace('.pkl', '.png')))
+
+    else: # No need to output predictions if evaluating here
+        compute_iou(args,all_pixel_predictions,file_names,args.epochs)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -510,6 +522,11 @@ if __name__ == '__main__':
         type=int,
         default=384,
         help="input channel size depending on models"
+    )
+    parser.add_argument(
+        '--output_predictions',
+        action='store_true',
+        help='Output predictions as PNGs'
     )
 
     args = parser.parse_args()
