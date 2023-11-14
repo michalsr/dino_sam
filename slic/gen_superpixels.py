@@ -29,8 +29,8 @@ def img_from_superpixels(img: torch.tensor, assignment: torch.tensor):
 # %%
 if __name__ == '__main__':
     # Define the input and output directories
-    input_dir = '/shared/rsaas/dino_sam/data/ADE20K/images/validation' # Image directory
-    output_dir = '/home/blume5/dino_sam/outputs/slic/ade20k/val/50_8' # Segmentation data output directory
+    input_dir = '/shared/rsaas/dino_sam/data/VOCtest/VOC2012/segmentation_imgs/test' # Image directory
+    output_dir = '/home/blume5/shared/slic_50_8/pascal_voc/assignments/test' # Segmentation data output directory
 
     # Define the parameters for the superpixel algorithm
     num_components = 50

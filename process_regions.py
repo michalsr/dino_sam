@@ -77,43 +77,44 @@ def region_features(args,image_id_to_sam):
         logger.warning(f'Found {len(features_minus_sam)} feature files that are not in the set of SAM region files: {features_minus_sam}')
 
     prog_bar = tqdm(feature_files_in_sam)
+
+    def extract_features(f, device='cuda'):
+        prog_bar.set_description(f'Region features: {f}')
+        features = utils.open_file(os.path.join(args.feature_dir,f))
+        file_name = f
+        ext = os.path.splitext(f)[1]
+        all_region_features_in_image = []
+        sam_regions = image_id_to_sam[file_name.replace(ext,'')]
+
+        if len(sam_regions) > 0:
+            # sam regions within an image all have the same total size
+            new_h, new_w = mask_utils.decode(sam_regions[0]['segmentation']).shape
+            patch_length = args.dino_patch_length
+            padded_h, padded_w = math.ceil(new_h / patch_length) * patch_length, math.ceil(new_w / patch_length) * patch_length # Get the padded height and width
+            upsample_feature = torch.nn.functional.interpolate(torch.from_numpy(features).to(device), size=[padded_h,padded_w],mode='bilinear') # First interpolate to the padded size
+            upsample_feature = T.CenterCrop((new_h, new_w)) (upsample_feature).squeeze(dim = 0) # Apply center cropping to the original size
+            f,h,w = upsample_feature.size()
+
+            for region in sam_regions:
+                sam_region_feature = {}
+                sam_region_feature['region_id'] = region['region_id']
+                sam_region_feature['area'] = region['area']
+                sam_mask = mask_utils.decode(region['segmentation'])
+                r_1, r_2 = np.where(sam_mask == 1)
+                features_in_sam = upsample_feature[:,r_1,r_2].view(f,-1).mean(1).cpu().numpy()
+                sam_region_feature['region_feature'] = features_in_sam
+                all_region_features_in_image.append(sam_region_feature)
+
+        utils.save_file(os.path.join(args.region_feature_dir, file_name.replace(ext,'.pkl')), all_region_features_in_image)
+
     for i,f in enumerate(prog_bar):
         try:
-            prog_bar.set_description(f'Region features: {f}')
-            features = utils.open_file(os.path.join(args.feature_dir,f))
-            file_name = f
-            ext = os.path.splitext(f)[1]
-            all_region_features_in_image = []
-            sam_regions = image_id_to_sam[file_name.replace(ext,'')]
+            extract_features(f)
 
-            if len(sam_regions) > 0:
-                # sam regions within an image all have the same total size
-                new_h, new_w = mask_utils.decode(sam_regions[0]['segmentation']).shape
-                patch_length = args.dino_patch_length
-                padded_h, padded_w = math.ceil(new_h / patch_length) * patch_length, math.ceil(new_w / patch_length) * patch_length # Get the padded height and width
-                upsample_feature = torch.nn.functional.interpolate(torch.from_numpy(features).cuda(), size=[padded_h,padded_w],mode='bilinear') # First interpolate to the padded size
-                upsample_feature = T.CenterCrop((new_h, new_w)) (upsample_feature).squeeze(dim = 0) # Apply center cropping to the original size
-                f,h,w = upsample_feature.size()
-
-                for region in sam_regions:
-                    sam_region_feature = {}
-                    sam_region_feature['region_id'] = region['region_id']
-                    sam_region_feature['area'] = region['area']
-                    sam_mask = mask_utils.decode(region['segmentation'])
-                    r_1, r_2 = np.where(sam_mask == 1)
-                    features_in_sam = upsample_feature[:,r_1,r_2].view(f,-1).mean(1).cpu().numpy()
-                    sam_region_feature['region_feature'] = features_in_sam
-                    all_region_features_in_image.append(sam_region_feature)
-
-            utils.save_file(os.path.join(args.region_feature_dir, file_name.replace(ext,'.pkl')), all_region_features_in_image)
-
-        # Catch cuda out of memory error
         except torch.cuda.OutOfMemoryError as e:
-            if not args.skip_oom:
-                raise e
-
-            logger.warning(f'Caught CUDA out of memory error for {file_name}; skipping file')
+            logger.warning(f'Caught CUDA out of memory error for {f}; falling back to CPU')
             torch.cuda.empty_cache()
+            extract_features(f, device='cpu')
 
 def load_all_regions(args):
     if len(os.listdir(args.mask_dir)) == 0:
@@ -166,12 +167,6 @@ if __name__ == '__main__':
         "--use_sam",
         action="store_false",
         help="If not using json sam regions"
-    )
-
-    parser.add_argument(
-        "--skip_oom",
-        action="store_true",
-        help="If true, skip files that cause cuda out of memory error"
     )
 
     args = parser.parse_args()
