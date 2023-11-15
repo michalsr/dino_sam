@@ -30,12 +30,16 @@ def label_region(args,sam_region,annotation_map):
     pixel_values_in_region = annotation_map[sam_region_nonzero[0],sam_region_nonzero[1]].flatten()
     unique_pixels, pixel_counts = np.unique(pixel_values_in_region,return_counts=True)
     all_pixels_in_region = dict(zip(unique_pixels,pixel_counts))
-    start_class = 0
+    if args.num_classes ==151:
+        print('For ADE do not want to include background regions ')
+        start_class = 1
+    else:
+        start_class = 0
 
     # get total num of pixels
     num_pixels = sum(all_pixels_in_region.values())
     #check if any pixel is greater than certain percent value
-    more_than_percent= [(pixel_val,pixel_count) for pixel_val,pixel_count in all_pixels_in_region.items() if all((pixel_count>((args.label_percent/100)*num_pixels),pixel_val>=0,pixel_val<=args.num_classes))]
+    more_than_percent= [(pixel_val,pixel_count) for pixel_val,pixel_count in all_pixels_in_region.items() if all((pixel_count>((args.label_percent/100)*num_pixels),pixel_val>=start_class,pixel_val<=args.num_classes))]
     # initialize all as None
 
     initial_label  = {key: None for key in list(range(start_class,args.num_classes+1))}
@@ -123,16 +127,8 @@ if __name__ == '__main__':
         default=None,
         help="Convert class names to class ids",
     )
-    parser.add_argument(
-        "--vaw",
-        action="store_true",
-        help="If Visual Attributes in the Wild (VAW) dataset. Different fxn used",
-    )
-    parser.add_argument(
-        "--use_sam",
-        action="store_false",
-        help="Only for VAW. Whether to use SAM regions or default instance masks",
-    )
+
+
     parser.add_argument(
         "--num_classes",
         type=int,
