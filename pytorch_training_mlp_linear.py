@@ -332,7 +332,7 @@ def eval_model(args):
         # want avg across softmax values, need to get number of regions summed for each pixel
         # repeat number of regions across softmax values
 
-        divide = torch.repeat_interleave(mask_sum[nonzero_mask[0],nonzero_mask[1],None],num_classes+1,dim=1)
+        divide = torch.repeat_interleave(mask_sum[nonzero_mask[0],nonzero_mask[1],None],num_classes,dim=1)
 
         nonzero_region_pixel_preds = torch.divide(product,divide)
 
