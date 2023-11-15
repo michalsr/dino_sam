@@ -137,14 +137,7 @@ def train_multi_classifier(args):
     utils.save_file(save_dir,classifier)
     print(f'Saved multiclass clssifier')
     all_pixel_predictions, file_names = per_pixel_prediction(args)
-    if args.output_predictions:
-        print('Saving predictions to PNGs')
-        prediction_dir = os.path.join(args.results_dir, 'predictions')
-        os.makedirs(prediction_dir, exist_ok=True)
-
-        for file_name, prediction in tqdm(zip(file_names, all_pixel_predictions)):
-            prediction = Image.fromarray(prediction.astype(np.uint8))
-            prediction.save(os.path.join(prediction_dir, file_name.replace('.pkl', '.png')))
+    
 
     compute_iou(args,all_pixel_predictions,file_names)
 
@@ -233,37 +226,6 @@ def train_mlp(args):
     all_pixel_predictions, file_names = per_pixel_prediction(args)
     compute_iou(args,all_pixel_predictions,file_names)
     
-    
-
-
-
-
-
-def evaluate_classifier(args, class_id):
-    file = os.path.join(args.classifier_dir, 'val.pkl')
-    val_data = utils.open_file(file)
-    loaded_model = utils.open_file(os.path.join(args.classifier_dir, f'model_{class_id}.sav'))
-    target_label = np.zeros_like(val_data['label'])
-    target_label.fill(-1)
-    target_label[np.where(val_data['label'] == class_id)] = 1
-    if args.use_weight:
-        sample_weight = val_data['weight']
-    else:
-        sample_weight = None 
-    roc_auc = roc_auc_score(target_label, loaded_model.decision_function(val_data['feature']),
-                                    sample_weight=sample_weight, multi_class='ovr')
-
-    ap_score = average_precision_score(target_label, loaded_model.decision_function(val_data['feature']),
-                                       sample_weight=val_data['weight'])
-    print(f'ROC AUC SCORE = {roc_auc} for class {class_id}')
-    print(f'Average Precision Score = {ap_score} for class {class_id}')
- 
-
-
-                                                                               
-    save_dir = os.path.join(args.classifier_dir,f'classifier/model_{class_id}.sav')
-    utils.save_file(save_dir,classifier)
-    print(f'Saved classifier for {class_id} to {save_dir}')
 
 
 def train_and_evaluate(args):
@@ -300,6 +262,14 @@ def train_and_evaluate(args):
 
       
     all_pixel_predictions, file_names = per_pixel_prediction(args)
+    if args.output_predictions:
+        print('Saving predictions to PNGs')
+        prediction_dir = os.path.join(args.results_dir, 'predictions')
+        os.makedirs(prediction_dir, exist_ok=True)
+
+        for file_name, prediction in tqdm(zip(file_names, all_pixel_predictions)):
+            prediction = Image.fromarray(prediction.astype(np.uint8))
+            prediction.save(os.path.join(prediction_dir, file_name.replace('.pkl', '.png')))
     compute_iou(args,all_pixel_predictions,file_names)
 
     

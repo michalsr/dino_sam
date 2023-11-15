@@ -26,26 +26,6 @@ from torch.utils.data import DataLoader, TensorDataset
 from sklearn.metrics import accuracy_score
 from torch.utils.data import Dataset, DataLoader
 import utils
-# class RegionTransformer(nn.Module):
-#     def __init__(self, embed_dim, num_heads, num_classes):
-#         super(RegionTransformer, self).__init__()
-
-#         # Multi-Head Attention
-#         self.attention = nn.MultiheadAttention(embed_dim, num_heads)
-
-#         # Final linear layer to output area-wise labels
-#         self.fc = nn.Linear(embed_dim, num_classes)
-
-#     def forward(self, region_feats):
-#         # q,k,v are all dino features averaged within sam region+positional encoding
-
-#         attn_output, _ = self.attention(region_feats, region_feats, region_feats)
-
-#         # Predict area-wise labels
-#         output = self.fc(attn_output)
-
-
-#         return output
 class RegionTransformer(nn.Module):
     def __init__(self, embed_dim, num_heads, num_classes):
         super(RegionTransformer, self).__init__()
@@ -166,7 +146,7 @@ def eval_acc(args,model):
 
 def train_transformer(args):
     dataset = FeatureDataset(region_feat_dir=args.train_region_feature_dir,region_labels_dir=args.train_region_labels_dir,pos_embd_dir=args.train_pos_embd_dir,args=args)
-    model = RegionTransformer(1024,8,args.num_classes)
+    model = RegionTransformer(1024,8,args.num_classes+1)
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer,T_max=args.epochs)
     if args.use_weight:
@@ -237,11 +217,7 @@ def train_transformer(args):
 
 
 def eval_transformer(args):
-    if args.model == 'linear':
-        model = torch.nn.Linear(1024,args.num_classes)
-    else:
-        model = torchvision.ops.MLP(in_channels=args.input_channels,hidden_channels=[args.hidden_channels,args.num_classes])
-    
+    model = RegionTransformer(1024,8,args.num_classes+1)
     model.load_state_dict(torch.load(os.path.join(args.save_dir,'model.pt')))
     model.eval()
     class_preds = []
@@ -287,7 +263,7 @@ def eval_transformer(args):
         features = torch.tensor(np.stack(feature_all))
         features = features[region_idx,:]
 
-        predictions = torch.zeros((len(feature_all),args.num_classes))
+        
         with torch.no_grad():
             feats = features 
             feats = feats.cuda()
@@ -347,24 +323,25 @@ def compute_iou(args,predictions,file_names):
         reduce_labels = True
         reduce_pred_labels = True 
     else:
-        num_classes = args.num_classes
+        num_classes = args.num_classes +1
         reduce_labels = False
         reduce_pred_labels=False 
-    if args.ade:
-        assert reduce_labels=True
-        assert reduce_pred_labels=True
+    if args.ade==True:
+        assert reduce_labels==True 
+        assert reduce_pred_labels==True
+        assert num_classes == 149 
     miou = mean_iou(results=predictions,gt_seg_maps=actual_labels,num_labels=num_classes,ignore_index=255,reduce_labels=reduce_labels,reduce_pred_labels=reduce_pred_labels)
     print(miou)
     utils.save_file(os.path.join(args.results_dir,'mean_iou.json'),miou,json_numpy=True)
 
 def train_and_evaluate(args):
-    if args.num_classes != 151 and args.num_classes!= 21:
-        raise ValueError('ADE should have 151 and Pascal VOC should have 21')
-    if args.num_classes == 151:
+    if args.num_classes != 150 and args.num_classes!= 20:
+        raise ValueError('ADE should have 150 and Pascal VOC should have 21')
+    if args.num_classes == 150:
         if args.ade ==False:
             raise ValueError('If using ADE then ade argument should be set to True')
-    if args.ade:
-        print('Training and evaluating on ADE. Make sure to use the correct region label directory!')
+    if args.ade==True:
+        print('Training and evaluating on ADE. Make sure to use the correct region label directory (ADE20K_no_zero)!')
     if not args.eval_only:
         train_transformer(args)
     all_pixel_predictions, file_names = eval_transformer(args)
