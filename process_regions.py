@@ -75,7 +75,7 @@ def region_features(args,image_id_to_sam):
     features_minus_sam = set(all_feature_files) - set(feature_files_in_sam)
     if len(features_minus_sam) > 0:
         logger.warning(f'Found {len(features_minus_sam)} feature files that are not in the set of SAM region files: {features_minus_sam}')
-
+    
     prog_bar = tqdm(feature_files_in_sam)
 
     def extract_features(f, device='cuda'):
@@ -86,25 +86,50 @@ def region_features(args,image_id_to_sam):
         all_region_features_in_image = []
         sam_regions = image_id_to_sam[file_name.replace(ext,'')]
 
-        if len(sam_regions) > 0:
-            # sam regions within an image all have the same total size
-            new_h, new_w = mask_utils.decode(sam_regions[0]['segmentation']).shape
-            patch_length = args.dino_patch_length
-            padded_h, padded_w = math.ceil(new_h / patch_length) * patch_length, math.ceil(new_w / patch_length) * patch_length # Get the padded height and width
-            upsample_feature = torch.nn.functional.interpolate(torch.from_numpy(features).to(device), size=[padded_h,padded_w],mode='bilinear') # First interpolate to the padded size
-            upsample_feature = T.CenterCrop((new_h, new_w)) (upsample_feature).squeeze(dim = 0) # Apply center cropping to the original size
-            f,h,w = upsample_feature.size()
+        if args.pooling_method == 'downsample':
+            f1, h1, w1 = features[0].shape
 
             for region in sam_regions:
                 sam_region_feature = {}
                 sam_region_feature['region_id'] = region['region_id']
                 sam_region_feature['area'] = region['area']
                 sam_mask = mask_utils.decode(region['segmentation'])
-                r_1, r_2 = np.where(sam_mask == 1)
-                features_in_sam = upsample_feature[:,r_1,r_2].view(f,-1).mean(1).cpu().numpy()
+                h2, w2 = sam_mask.shape
+                downsampled_mask = torch.from_numpy(sam_mask).cuda()
+                downsampled_mask = downsampled_mask.unsqueeze(0).unsqueeze(0)
+                downsampled_mask = torch.nn.functional.interpolate(downsampled_mask, size=(h1, w1), mode='nearest').squeeze(0).squeeze(0)
+
+                if torch.sum(downsampled_mask).item() == 0:
+                    continue
+
+                features_in_sam = torch.from_numpy(features).cuda().squeeze(dim = 0)[:, downsampled_mask==1].view(f1, -1).mean(1).cpu().numpy()
                 sam_region_feature['region_feature'] = features_in_sam
                 all_region_features_in_image.append(sam_region_feature)
+        else:
+            if len(sam_regions) > 0:
+                # sam regions within an image all have the same total size
+                new_h, new_w = mask_utils.decode(sam_regions[0]['segmentation']).shape
+                patch_length = args.dino_patch_length
+                padded_h, padded_w = math.ceil(new_h / patch_length) * patch_length, math.ceil(new_w / patch_length) * patch_length # Get the padded height and width
+                upsample_feature = torch.nn.functional.interpolate(torch.from_numpy(features).cuda(), size=[padded_h,padded_w],mode='bilinear') # First interpolate to the padded size
+                upsample_feature = T.CenterCrop((new_h, new_w)) (upsample_feature).squeeze(dim = 0) # Apply center cropping to the original size
+                f,h,w = upsample_feature.size()
 
+                for region in sam_regions:
+                    sam_region_feature = {}
+                    sam_region_feature['region_id'] = region['region_id']
+                    sam_region_feature['area'] = region['area']
+                    sam_mask = mask_utils.decode(region['segmentation'])
+                    r_1, r_2 = np.where(sam_mask == 1)
+
+                    if args.pooling_method == 'average':
+                        features_in_sam = upsample_feature[:,r_1,r_2].view(f,-1).mean(1).cpu().numpy()
+                    elif args.pooling_methpd == 'max':
+                        input_max, max_indices = torch.max(upsample_feature[:,r_1,r_2].view(f,-1), 1)
+                        features_in_sam = input_max.cpu().numpy()
+
+                    sam_region_feature['region_feature'] = features_in_sam
+                    all_region_features_in_image.append(sam_region_feature)
         utils.save_file(os.path.join(args.region_feature_dir, file_name.replace(ext,'.pkl')), all_region_features_in_image)
 
     for i,f in enumerate(prog_bar):
@@ -167,6 +192,14 @@ if __name__ == '__main__':
         "--use_sam",
         action="store_false",
         help="If not using json sam regions"
+    )
+    
+    parser.add_argument(
+        "--pooling_method",
+        type=str,
+        default='average',
+        choices=['average', 'max', 'downsample'],
+        help='pooling methods'
     )
 
     args = parser.parse_args()
