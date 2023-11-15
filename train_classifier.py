@@ -109,7 +109,9 @@ def compute_iou(args,predictions,file_names):
         num_classes = args.num_classes 
         reduce_labels = False
         reduce_pred_labels=False 
-
+    if args.ade==True:
+        assert reduce_labels==True 
+        assert reduce_pred_labels==True 
     miou = mean_iou(results=predictions,gt_seg_maps=actual_labels,num_labels=num_classes,ignore_index=255,reduce_labels=reduce_labels,reduce_pred_labels=reduce_pred_labels)
     print(miou)
     utils.save_file(os.path.join(args.results_dir,'mean_iou.json'),miou,json_numpy=True)

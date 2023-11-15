@@ -359,9 +359,9 @@ def compute_iou(args,predictions,file_names,epoch):
         num_classes = args.num_classes
         reduce_labels = False
         reduce_pred_labels=False 
-    if args.ade:
-        assert reduce_labels=True 
-        assert reduce_pred_labels=True 
+    if args.ade==True:
+        assert reduce_labels==True 
+        assert reduce_pred_labels==True 
    
     miou = mean_iou(results=predictions,gt_seg_maps=actual_labels,num_labels=num_classes,ignore_index=255,reduce_labels=reduce_labels,reduce_pred_labels=reduce_pred_labels)
     print(miou)
@@ -373,7 +373,7 @@ def train_and_evaluate(args):
     if args.num_classes == 151:
         if args.ade ==False:
             raise ValueError('If using ADE then ade argument should be set to True')
-    if args.ade:
+    if args.ade==True:
         print('Training and evaluating on ADE. Make sure to use the correct region label directory!')
     if not args.eval_only:
         train_model(args)
