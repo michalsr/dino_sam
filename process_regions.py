@@ -124,7 +124,7 @@ def region_features(args,image_id_to_sam):
 
                     if args.pooling_method == 'average':
                         features_in_sam = upsample_feature[:,r_1,r_2].view(f,-1).mean(1).cpu().numpy()
-                    elif args.pooling_methpd == 'max':
+                    elif args.pooling_method == 'max':
                         input_max, max_indices = torch.max(upsample_feature[:,r_1,r_2].view(f,-1), 1)
                         features_in_sam = input_max.cpu().numpy()
 
