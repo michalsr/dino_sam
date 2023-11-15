@@ -239,7 +239,7 @@ def train_model(args):
 
 def eval_model(args):
     if args.model == 'linear':
-        model = torch.nn.Linear(1024,args.num_classes)
+        model = torch.nn.Linear(args.input_channels, args.num_classes)
     else:
         model = torchvision.ops.MLP(in_channels=args.input_channels,hidden_channels=[args.hidden_channels,args.num_classes])
     
@@ -263,10 +263,6 @@ def eval_model(args):
 
         all_regions = []
         region_order = []
-        for i, region in enumerate(all_sam):
-            mask = mask_utils.decode(region['segmentation'])
-            all_regions.append(mask.astype('float32'))
-            region_order.append(region['region_id'])
         region_features = utils.open_file(os.path.join(val_features,file))
         feature_all = []
         for j,area in enumerate(region_features):
@@ -279,7 +275,15 @@ def eval_model(args):
 
         region_all = {area['region_id']:j for j,area in enumerate(region_features)}
         # track region id
-        region_idx = [region_all[r] for r in region_order]
+        region_idx = []
+        for i, region in enumerate(all_sam):
+            if region['region_id'] not in region_all.keys():
+                continue
+            else:
+                region_idx.append(region_all[region['region_id']])
+                region_order.append(region['region_id'])
+                mask = mask_utils.decode(region['segmentation'])
+                all_regions.append(mask.astype('float32'))
 
         if len(feature_all) == 0: # There were no predicted regions; use None as a flag
             all_pixel_predictions.append(None)
@@ -535,7 +539,7 @@ if __name__ == '__main__':
     parser.add_argument(
         "--input_channels",
         type=int,
-        default=384,
+        default=1024,
         help="input channel size depending on models"
     )
     parser.add_argument(
