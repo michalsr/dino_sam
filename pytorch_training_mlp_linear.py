@@ -90,7 +90,7 @@ def get_all_features(region_feat_dir, region_labels_dir,pos_embd_dir,data_file):
                     break
                 else:
                     all_feats.append(area_feature)
-      
+
                     all_labels.append(target_label)
                     all_weight.append(area_weight)
 
@@ -120,7 +120,7 @@ class FeatureDataset(Dataset):
 def eval_acc(args,model,epoch):
     dataset = FeatureDataset(region_feat_dir=args.val_region_feature_dir,region_labels_dir=args.val_region_labels_dir,pos_embd_dir=args.val_pos_embd_dir,data_file=args.val_data_file)
     dataloader = torch.utils.data.DataLoader(dataset,batch_size=1,shuffle=False)
-    
+
     if args.ade:
         criterion = nn.CrossEntropyLoss(reduction='sum',ignore_index=0)
     else:
@@ -216,7 +216,7 @@ def train_model(args):
             optimizer.step()
             optimizer.zero_grad()
             with torch.no_grad():
-       
+
                 train_acc += (mca(outputs.cpu(),labels.cpu()).item() * labels.size()[0])
 
 
@@ -243,7 +243,7 @@ def eval_model(args):
         model = torch.nn.Linear(args.input_channels, args.num_classes+1)
     else:
         model = torchvision.ops.MLP(in_channels=args.input_channels,hidden_channels=[args.hidden_channels,args.num_classes+1])
-    
+
     model.load_state_dict(torch.load(os.path.join(args.save_dir,'model.pt')))
     model.eval()
     class_preds = []
@@ -358,15 +358,15 @@ def compute_iou(args,predictions,file_names,epoch):
     if args.ignore_zero or args.ade:
         num_classes = args.num_classes-1
         reduce_labels = True
-        reduce_pred_labels=True 
+        reduce_pred_labels=True
 
     else:
         num_classes = args.num_classes+1
         reduce_labels = False
-        reduce_pred_labels=False 
+        reduce_pred_labels=False
     if args.ade==True:
-        assert reduce_labels==True 
-        assert reduce_pred_labels==True 
+        assert reduce_labels==True
+        assert reduce_pred_labels==True
         assert num_classes == 149
     miou = mean_iou(results=predictions,gt_seg_maps=actual_labels,num_labels=num_classes,ignore_index=255,reduce_labels=reduce_labels,reduce_pred_labels=reduce_pred_labels)
     print(miou)
@@ -384,7 +384,7 @@ def train_and_evaluate(args):
         train_model(args)
 
     all_pixel_predictions, file_names = eval_model(args)
-    compute_iou(args,all_pixel_predictions,file_names,args.epochs)
+
     # Save pixel predictions as PNGs for use on evaluation server
     if args.output_predictions:
         print('Saving predictions to PNGs')
@@ -395,7 +395,7 @@ def train_and_evaluate(args):
             prediction = Image.fromarray(prediction.astype(np.uint8))
             prediction.save(os.path.join(prediction_dir, file_name.replace('.pkl', '.png')))
 
-    else: # No need to output predictions if evaluating here
+    if not args.no_evaluation: # No need to output predictions if evaluating here
         compute_iou(args,all_pixel_predictions,file_names,args.epochs)
 
 if __name__ == '__main__':
@@ -468,7 +468,6 @@ if __name__ == '__main__':
         action="store_true",
         help="No classifier training"
     )
-    parser.add_argument("--dataset_name",type=str,default='ade')
 
     parser.add_argument(
         "--lr",
@@ -500,19 +499,23 @@ if __name__ == '__main__':
         type=str,
         default="linear",
         help="linear or mlp")
-
-    parser.add_argument("--use_pos_embd",
-    action="store_true",
-    help="Add in sam pos encod")
-    parser.add_argument("--train_pos_embd_dir",
-    type=str,
-    default=None,
-    help="Train pos embedding")
-    parser.add_argument("--val_pos_embd_dir",
-    type=str,
-    default=None,
-    help="Val pos embedding")
-
+    parser.add_argument(
+        "--use_pos_embd",
+        action="store_true",
+        help="Add in sam pos encod"
+    )
+    parser.add_argument(
+        "--train_pos_embd_dir",
+        type=str,
+        default=None,
+        help="Train pos embedding"
+    )
+    parser.add_argument(
+        "--val_pos_embd_dir",
+        type=str,
+        default=None,
+        help="Val pos embedding"
+    )
     parser.add_argument(
         "--num_classes",
         type=int,
@@ -551,8 +554,36 @@ if __name__ == '__main__':
     parser.add_argument(
         '--ade',
         action='store_true',
-        help='Output predictions as PNGs'
+        help='Whether the datset we\'re running on is ADE20K. Adjusts labeling and loss computation'
+    )
+
+    parser.add_argument(
+        '--override_ade_detection',
+        action='store_true',
+        help='Whether to train/eval anyways in spite of the ADE20K dataset detection.'
+    )
+
+    parser.add_argument(
+        '--no_evaluation',
+        action='store_true',
+        help='Whether to skip evaluation (e.g. for Pascal VOC test which hasn\'t released labels.'
     )
 
     args = parser.parse_args()
+
+    # Try to detect whether the dataset is ADE20K, and if so, force the user to set the flag
+    dirs = [
+        s.lower() for s in [
+            args.train_region_labels_dir,
+            args.val_region_labels_dir,
+            args.annotation_dir,
+            args.train_region_feature_dir,
+            args.val_region_feature_dir,
+            args.sam_dir
+        ]
+    ]
+
+    if 'ade20k' in dirs and not args.override_ade_detection:
+        raise ValueError('Detected ADE20K dataset. Please set the --ade flag.')
+
     train_and_evaluate(args)
