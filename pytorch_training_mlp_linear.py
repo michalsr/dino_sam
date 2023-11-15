@@ -240,7 +240,7 @@ def train_model(args):
 
 def eval_model(args):
     if args.model == 'linear':
-        model = torch.nn.Linear(args.input_channels, args.num_classes)
+        model = torch.nn.Linear(args.input_channels, args.num_classes+1)
     else:
         model = torchvision.ops.MLP(in_channels=args.input_channels,hidden_channels=[args.hidden_channels,args.num_classes+1])
     
@@ -332,7 +332,7 @@ def eval_model(args):
         # want avg across softmax values, need to get number of regions summed for each pixel
         # repeat number of regions across softmax values
 
-        divide = torch.repeat_interleave(mask_sum[nonzero_mask[0],nonzero_mask[1],None],num_classes,dim=1)
+        divide = torch.repeat_interleave(mask_sum[nonzero_mask[0],nonzero_mask[1],None],num_classes+1,dim=1)
 
         nonzero_region_pixel_preds = torch.divide(product,divide)
 
@@ -541,7 +541,7 @@ if __name__ == '__main__':
         "--input_channels",
         type=int,
         default=1024,
-        help="input channel size depending on models"
+gs        help="input channel size depending on models"
     )
     parser.add_argument(
         '--output_predictions',
