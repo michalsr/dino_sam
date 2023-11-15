@@ -379,7 +379,7 @@ def train_and_evaluate(args):
         if args.ade ==False:
             raise ValueError('If using ADE then ade argument should be set to True')
     if args.ade==True:
-        print('Training and evaluating on ADE. Make sure to use the correct region label directory!')
+        print('Training and evaluating on ADE. Make sure to use the correct region label directory (ADE20K_no_zero)!')
     if not args.eval_only:
         train_model(args)
 

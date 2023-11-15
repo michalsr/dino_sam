@@ -272,6 +272,8 @@ def train_and_evaluate(args):
     if args.num_classes == 150:
         if args.ade ==False:
             raise ValueError('If using ADE then ade argument should be set to True')
+    if args.ade==True:
+        print('Training and evaluating on ADE. Make sure to use the correct region label directory (ADE20K_no_zero)!')
     if args.eval_only:
         all_pixel_predictions, file_names = per_pixel_prediction(args)
         compute_iou(args,all_pixel_predictions,file_names)
