@@ -86,13 +86,11 @@ def get_all_features(region_feat_dir, region_labels_dir,pos_embd_dir,data_file):
             target_label = list(area_label.keys())[0]
 
             if area_label[target_label] == 1:
-                if target_label == 0:
-                    break
-                else:
-                    all_feats.append(area_feature)
 
-                    all_labels.append(target_label)
-                    all_weight.append(area_weight)
+                all_feats.append(area_feature)
+    
+                all_labels.append(target_label)
+                all_weight.append(area_weight)
 
     utils.save_file(data_file,{'features':all_feats,'labels':all_labels,'weight':all_weight})
     return np.stack(all_feats), np.stack(all_labels),np.stack(all_weight)
@@ -172,9 +170,8 @@ def train_model(args):
     else:
         model = torchvision.ops.MLP(in_channels=args.input_channels,hidden_channels=[args.hidden_channels,args.num_classes+1])
 
-    eval_acc(args,model,1)
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer,T_max=args.epochs)
+    #scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer,T_max=args.epochs)
     if args.ade:
         criterion = nn.CrossEntropyLoss(reduction='none',ignore_index=0)
     else:
@@ -295,15 +292,16 @@ def eval_model(args):
 
         predictions = torch.zeros((len(feature_all),args.num_classes+1))
         with torch.no_grad():
-            for i in range(len(feature_all)):
-                feats = features[i,:]
+            feats = features
 
-                model = model.cuda()
+            model = model.cuda()
 
-                feats = feats.cuda().unsqueeze(0)
+            feats = feats.cuda()
 
-                output = model(feats)
-                predictions[i,:] = output.cpu()
+            output = model(feats)
+            predictions = output.cpu()
+     
+                
 
         if 'after_softmax' in args.multi_region_pixels:
             # averaging softmax values for pixels in multiple regions
@@ -343,6 +341,7 @@ def eval_model(args):
 
         # index back into original shape
         final_pixel_pred[nonzero_mask[0].cpu().numpy(),nonzero_mask[1].cpu().numpy()] = top_pred
+
         all_pixel_predictions.append(final_pixel_pred)
     return all_pixel_predictions, file_names
 
