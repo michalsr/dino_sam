@@ -10,7 +10,7 @@ import numpy as np
 import torch.nn.functional as F
 from utils import mean_iou
 from PIL import Image
-
+import yaml
 import itertools
 import math
 import argparse
@@ -220,15 +220,21 @@ def train_model(args):
 
         print(f"Epoch {epoch + 1}, Loss: {loss.item()}")
 
-        if not os.path.exists(args.save_dir):
-            os.makedirs(args.save_dir)
         torch.save(model.cpu().state_dict(),os.path.join(args.save_dir,'model.pt'))
         val_loss,val_acc = eval_acc(args,model,epoch)
         train_acc = train_acc/num_regions
         print(f"Train_acc:{train_acc}")
         metrics = {'val_loss':val_loss,'val_acc':val_acc,'train_acc':train_acc,'train_loss':loss.item()}
         utils.save_file(os.path.join(args.results_dir,f'metrics_epoch_{epoch}.json'),metrics,json_numpy=True)
+
         scheduler.step()
+
+        if args.log_to_wandb:
+            metrics.update({
+                'epoch': epoch,
+                'lr': scheduler.get_last_lr()[0]
+            })
+            wandb.log(metrics)
 
         if (epoch+1)%args.iou_every==0:
             all_pixel_predictions, file_names = eval_model(args)
@@ -566,6 +572,12 @@ if __name__ == '__main__':
         help='Whether to skip evaluation (e.g. for Pascal VOC test which hasn\'t released labels.'
     )
 
+    parser.add_argument(
+        '--log_to_wandb',
+        action='store_true',
+        help='Whether to log results to wandb'
+    )
+
     args = parser.parse_args()
 
     # Try to detect whether the dataset is ADE20K, and if so, force the user to set the flag
@@ -582,5 +594,14 @@ if __name__ == '__main__':
 
     if 'ade20k' in dirs and not args.override_ade_detection:
         raise ValueError('Detected ADE20K dataset. Please set the --ade flag.')
+
+    # Save arguments to save_dir
+    os.makedirs(args.save_dir, exist_ok=True)
+    with open(os.path.join(args.save_dir, 'args.yaml'), 'w') as f:
+        yaml.dump(vars(args), f)
+
+    if args.log_to_wandb:
+        import wandb
+        wandb.init(project='dino_sam', config=args)
 
     train_and_evaluate(args)
