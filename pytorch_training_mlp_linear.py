@@ -88,7 +88,7 @@ def get_all_features(region_feat_dir, region_labels_dir,pos_embd_dir,data_file):
             if area_label[target_label] == 1:
 
                 all_feats.append(area_feature)
-    
+
                 all_labels.append(target_label)
                 all_weight.append(area_weight)
 
@@ -171,7 +171,7 @@ def train_model(args):
         model = torchvision.ops.MLP(in_channels=args.input_channels,hidden_channels=[args.hidden_channels,args.num_classes+1])
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
-    #scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer,T_max=args.epochs)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer,T_max=args.epochs)
     if args.ade:
         criterion = nn.CrossEntropyLoss(reduction='none',ignore_index=0)
     else:
@@ -300,8 +300,6 @@ def eval_model(args):
 
             output = model(feats)
             predictions = output.cpu()
-     
-                
 
         if 'after_softmax' in args.multi_region_pixels:
             # averaging softmax values for pixels in multiple regions
