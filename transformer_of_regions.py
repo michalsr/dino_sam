@@ -5,18 +5,19 @@ from typing import List
 from pycocotools import mask as mask_utils
 # from einops import rearrange, reduce
 import torch
-import einops
+from collections import OrderedDict
 import numpy as np
 import torch.nn.functional as F
 from utils import mean_iou
 from PIL import Image
-
+from scipy.special import softmax, logit
 import itertools
 import math
 import argparse
 from tqdm import tqdm
 from torch import nn, optim
 from torch.optim import Adam
+from torch import nn
 from sklearn.metrics import roc_auc_score, average_precision_score
 import numpy as np
 from torchmetrics.classification import MulticlassAccuracy
@@ -25,219 +26,217 @@ from torch.utils.data import DataLoader, TensorDataset
 from sklearn.metrics import accuracy_score
 from torch.utils.data import Dataset, DataLoader
 import utils
-import torchvision
+# class RegionTransformer(nn.Module):
+#     def __init__(self, embed_dim, num_heads, num_classes):
+#         super(RegionTransformer, self).__init__()
 
-import sys
-import pickle
-import json
-from typing import List
-from pycocotools import mask as mask_utils
-# from einops import rearrange, reduce
-import torch
-import einops
-import numpy as np
-import torch.nn.functional as F
-from utils import mean_iou
-from PIL import Image
+#         # Multi-Head Attention
+#         self.attention = nn.MultiheadAttention(embed_dim, num_heads)
 
-import itertools
-import math
-import argparse
-from tqdm import tqdm
-from torch import nn, optim
-from torch.optim import Adam
-from sklearn.metrics import roc_auc_score, average_precision_score
-import numpy as np
-from torchmetrics.classification import MulticlassAccuracy
-import os
-from torch.utils.data import DataLoader, TensorDataset
-from sklearn.metrics import accuracy_score
-from torch.utils.data import Dataset, DataLoader
-import utils
-import torchvision
-'''
-Use transformer to classify regions
-'''
+#         # Final linear layer to output area-wise labels
+#         self.fc = nn.Linear(embed_dim, num_classes)
 
-def get_all_features(region_feat_dir, region_labels_dir,pos_embd_dir,data_file):
-    if os.path.exists(data_file):
-        data = utils.open_file(data_file)
-        return np.stack(data['features']),np.stack(data['labels']),np.stack(data['weight'])
+#     def forward(self, region_feats):
+#         # q,k,v are all dino features averaged within sam region+positional encoding
 
-    all_feats = []
-    all_labels = []
-    all_weight = []
-    print('Loading features')
-    for file_name in tqdm(os.listdir(region_feat_dir)):
-        region_feats = utils.open_file(os.path.join(region_feat_dir,file_name))
-        labels = utils.open_file(os.path.join(region_labels_dir,file_name))
+#         attn_output, _ = self.attention(region_feats, region_feats, region_feats)
 
-        if pos_embd_dir is not None:
-            pos_embd = utils.open_file(os.path.join(pos_embd_dir,file_name))
-
-        for i,region in enumerate(region_feats):
-            if pos_embd_dir is None:
-                area_feature = region['region_feature']
-            else:
-                area_feature = region['region_feature']+pos_embd[i,:]
-
-            area_label = labels[i]['labels']
-            area_weight = region['area']
-            target_label = list(area_label.keys())[0]
-
-            if area_label[target_label] == 1:
-                if target_label == 0:
-                    break
-                else:
-                    all_feats.append(area_feature)
-      
-                    all_labels.append(target_label)
-                    all_weight.append(area_weight)
-
-    utils.save_file(data_file,{'features':all_feats,'labels':all_labels,'weight':all_weight})
-    return np.stack(all_feats), np.stack(all_labels),np.stack(all_weight)
+#         # Predict area-wise labels
+#         output = self.fc(attn_output)
 
 
+#         return output
+class RegionTransformer(nn.Module):
+    def __init__(self, embed_dim, num_heads, num_classes):
+        super(RegionTransformer, self).__init__()
 
+        # Multi-Head Attention
+        self.encoder_layer = nn.TransformerEncoderLayer(d_model=embed_dim,nhead=num_heads,activation='gelu',batch_first=True)
+        self.encoder = nn.TransformerEncoder(self.encoder_layer, num_layers=1)
+
+        # Final linear layer to output area-wise labels
+        heads_layers: OrderedDict[str, nn.Module] = OrderedDict()
+        heads_layers["pre_logits"] = nn.Linear(embed_dim, embed_dim//2)
+        heads_layers["act"] = nn.Tanh()
+        heads_layers["head"] = nn.Linear(embed_dim//2, num_classes)
+        self.heads = nn.Sequential(heads_layers)
+        if hasattr(self.heads, "pre_logits") and isinstance(self.heads.pre_logits, nn.Linear):
+            fan_in = self.heads.pre_logits.in_features
+            nn.init.trunc_normal_(self.heads.pre_logits.weight, std=math.sqrt(1 / fan_in))
+            nn.init.zeros_(self.heads.pre_logits.bias)
+        self.fc = nn.Linear(embed_dim, num_classes)
+
+    def forward(self, region_feats):
+        # q,k,v are all dino features averaged within sam region+positional encoding
+        #region_feats = region_feats.unsqueeze(0)
+
+        output = self.encoder(region_feats)
+
+        # Predict area-wise labels
+        output = self.heads(output)
+
+
+        return output
 class FeatureDataset(Dataset):
     # load region features, add positional encoding and get region labels
-    def __init__(self,region_feat_dir, region_labels_dir,pos_embd_dir,data_file):
+    def __init__(self,region_feat_dir, region_labels_dir,pos_embd_dir,args):
         super().__init__()
-        region_feats,region_labels,weight = get_all_features(region_feat_dir, region_labels_dir,pos_embd_dir,data_file)
-        self.region_feats = region_feats
-        self.labels = region_labels
-        self.weight = weight
-
+        #region_feats,region_labels = get_all_features(region_feat_dir, region_labels_dir,pos_embd_dir)
+        self.region_feats = [f for f in os.listdir(region_feat_dir) if f.endswith('.pkl')]
+        self.region_labels_dir = region_labels_dir
+        self.pos_embd_dir = pos_embd_dir
+        self.region_feat_dir = region_feat_dir
+        self.args = args
 
     def __len__(self):
         return len(self.region_feats)
 
     def __getitem__(self, idx):
-        region_feats = self.region_feats[idx]
-        labels = self.labels[idx]
-        weight = self.weight[idx]
-        return torch.tensor(region_feats), torch.tensor(labels), torch.tensor(weight)
-def eval_acc(args,model,epoch):
-    dataset = FeatureDataset(region_feat_dir=args.val_region_feature_dir,region_labels_dir=args.val_region_labels_dir,pos_embd_dir=args.val_pos_embd_dir,data_file=args.val_data_file)
+        file_name= self.region_feats[idx]
+
+        region_feats = utils.open_file(os.path.join(self.region_feat_dir,file_name))
+        labels = utils.open_file(os.path.join(self.region_labels_dir,file_name))
+        pos_embd = utils.open_file(os.path.join(self.pos_embd_dir,file_name))
+
+        # combine and stack
+        all_feats = []
+        all_labels = []
+        all_weight = []
+        for i,region in enumerate(region_feats):
+            area_feature = region['region_feature']+pos_embd[i,:]
+            area_label = labels[i]['labels']
+            area_weight = region['area']
+            target_label = list(area_label.keys())[0]
+
+            if area_label[target_label] == 1:
+                all_feats.append(area_feature)
+                all_weight.append(area_weight)
+
+       
+        if len(all_feats) == 0:
+            all_feats = np.zeros(1)
+            all_labels = np.zeros(1)
+            all_weight = np.zeros(1)
+            flag = True
+        else:
+            all_feats = np.stack(all_feats)
+            all_labels = np.stack(all_labels)
+            all_weight = np.stack(all_weight)
+            flag = False
+
+        return torch.tensor(all_feats), torch.tensor(all_labels),torch.tensor(all_weight),flag
+def eval_acc(args,model):
+    dataset = FeatureDataset(region_feat_dir=args.val_region_feature_dir,region_labels_dir=args.val_region_labels_dir,pos_embd_dir=args.val_pos_embd_dir,args=args)
     dataloader = torch.utils.data.DataLoader(dataset,batch_size=1,shuffle=False)
-    
-    if args.ade:
-        criterion = nn.CrossEntropyLoss(reduction='sum',ignore_index=0)
-    else:
-        criterion = nn.CrossEntropyLoss(reduction='sum')
+    criterion = nn.CrossEntropyLoss(reduction='sum')
     mca = MulticlassAccuracy(num_classes=args.num_classes, average='micro',top_k=1)
+    batch_acc = 0
     predictions = []
     all_labels = []
     total_regions = 0
     all_loss = 0
-    model.eval()
     with torch.no_grad():
         for i, data in enumerate(tqdm(dataloader)):
-            region_feats, labels, weight= data
-            total_regions += len(labels)
+            region_feats, labels,_,_ = data
+            
             model = model.cuda()
 
             labels = labels.cuda()
             region_feats = region_feats.cuda()
             outputs = model(region_feats)
-
-            outputs = outputs.squeeze()
-
-
-            # Reshape outputs and labels for loss calculation
-            outputs = outputs.view(-1, args.num_classes)
-            predictions.append(outputs.cpu())
-            # print(outputs.shape)
+            # print(outputs.size())
+            outputs = outputs.squeeze(0)
+            #outputs = outputs.transpose(0, 1).view(-1, args.num_classes)
             labels = labels.view(-1)
-            all_labels.append(labels.cpu())
+            total_regions += labels.size()[0]
 
             loss = criterion(outputs, labels)
             all_loss+=(loss.item())
 
-
+            batch_acc += (mca(outputs.cpu(),labels.cpu()).item() * total_regions)
     val_loss = all_loss/total_regions
     print(f'Val loss:{val_loss}')
-    predictions = torch.stack(predictions)
-    all_labels = torch.stack(all_labels)
-    # print(predictions.shape,all_labels.shape)
-    val_acc = mca(predictions.squeeze(),all_labels.squeeze())
-    print(f'Val acc:{val_acc.item()}')
-    return val_loss,val_acc.item()
+    batch_acc = batch_acc/total_regions
+    print(f'Batch acc:{batch_acc}')
+
+    return val_loss,batch_acc
 
 
-def train_model(args):
-    dataset = FeatureDataset(region_feat_dir=args.train_region_feature_dir,region_labels_dir=args.train_region_labels_dir,pos_embd_dir=args.train_pos_embd_dir,data_file=args.train_data_file)
-    if args.model == 'linear':
-        model = torch.nn.Linear(args.input_channels,args.num_classes)
-    else:
-        model = torchvision.ops.MLP(in_channels=args.input_channels,hidden_channels=[args.hidden_channels,args.num_classes])
 
-    eval_acc(args,model,1)
+
+def train_transformer(args):
+    dataset = FeatureDataset(region_feat_dir=args.train_region_feature_dir,region_labels_dir=args.train_region_labels_dir,pos_embd_dir=args.train_pos_embd_dir,args=args)
+    model = RegionTransformer(1024,8,args.num_classes)
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer,T_max=args.epochs)
-    if args.ade:
-        criterion = nn.CrossEntropyLoss(reduction='none',ignore_index=0)
+    if args.use_weight:
+        reduction='none'
     else:
-        criterion = nn.CrossEntropyLoss(reduction='none')
+        reduction='mean'
+    if args.ade:
+        ignore_index = 0
+    else:
+        ignore_index = -1000
+    criterion = nn.CrossEntropyLoss(reduction=reduction,ignore_index=ignore_index) # ANSEL Allow mean reduction to normalize loss by number of examples (regions) in a batch
+ 
     epochs = args.epochs
-    mca = MulticlassAccuracy(num_classes=args.num_classes, average='micro',top_k=1)
-    # batch is over total number of regions so can make it very large (8192)
+
+    # ANSEL batch size will be the number of images in a batch, not regions
     dataloader = torch.utils.data.DataLoader(dataset,batch_size=args.batch_size,shuffle=True)
-    print(f'Train dataloader length with batch size {args.batch_size}: {len(dataloader)}')
-    train_outputs = []
-    train_labels = []
-    total_regions = 0
+
+    mca = MulticlassAccuracy(num_classes=args.num_classes, average='micro',top_k=1)
     for epoch in range(epochs):  # Example number of epochs
-        batch_loss = 0
         model = model.cuda()
-        model.train()
-        num_regions = 0
-        train_acc = 0
-        for i, data in enumerate(tqdm(dataloader)):
+        for i, data in enumerate(tqdm(dataloader), start=1):
             model.train()
-            region_feats, labels,weight = data
-            num_regions += len(labels)
+            region_feats, labels,weights,flag = data
+            if flag:
+                continue
+
             region_feats = region_feats.cuda()
             labels = labels.cuda()
+            weights = weights.cuda()
 
             outputs = model(region_feats)
-            outputs = outputs.squeeze()
 
-            outputs = outputs.view(-1, args.num_classes)
+            # ANSEL assuming outputs are of shape (bsize, n_regions, n_classes)
+            outputs = outputs.reshape(-1, outputs.shape[-1]) # (bsize * n_regions, n_classes)
+            labels = labels.reshape(-1) # (bsize * n_regions)
 
-            labels = labels.view(-1)
-            weight = weight.cuda()
-            weight = torch.nn.functional.normalize(weight.float(),dim=0)
+            # ANSEL Update region train accuracy
+            mca(outputs.detach(), labels) # ANSEL No need to shift to CPU
 
-
-            loss = (criterion(outputs, labels)*weight).mean()
-
+            # ANSEL Compute loss and take optimizer step every accumulate_grad_batches batches.
+            # Effective image batch size is then args.batch_size * args.accumulate_grad_batches
+            if args.use_weight:
+                weight = torch.nn.functional.normalize(weight.float(),dim=0)
+                loss = (citerion(outputs,labels)*weights.cuda()).mean()
+            else:
+                loss = criterion(outputs,labels)
+            loss = criterion(outputs, labels)
+            loss = loss / args.accumulate_grad_batches # ANSEL accumulate_grad_batches is 1 by default
             loss.backward()
-            optimizer.step()
-            optimizer.zero_grad()
-            with torch.no_grad():
-                train_acc += (mca(outputs.cpu(),labels.cpu()).item() * labels.size()[0])
 
-
+            if i % args.accumulate_grad_batches == 0 or i == len(dataloader):
+                optimizer.step()
+                optimizer.zero_grad()
 
         print(f"Epoch {epoch + 1}, Loss: {loss.item()}")
-
-        if not os.path.exists(args.save_dir):
-            os.makedirs(args.save_dir)
         torch.save(model.cpu().state_dict(),os.path.join(args.save_dir,'model.pt'))
-        val_loss,val_acc = eval_acc(args,model,epoch)
-        train_acc = train_acc/num_regions
+        val_loss,val_acc = eval_acc(args,model)
+
+        train_acc = mca.compute()
         print(f"Train_acc:{train_acc}")
         metrics = {'val_loss':val_loss,'val_acc':val_acc,'train_acc':train_acc,'train_loss':loss.item()}
         utils.save_file(os.path.join(args.results_dir,f'metrics_epoch_{epoch}.json'),metrics,json_numpy=True)
-        scheduler.step()
 
         if (epoch+1)%args.iou_every==0:
-            all_pixel_predictions, file_names = eval_model(args)
-            compute_iou(args,all_pixel_predictions,file_names,epoch)
+            all_pixel_predictions, file_names = eval_transformer(args)
+            compute_iou(args,all_pixel_predictions,file_names)
+        scheduler.step()
 
 
-def eval_model(args):
+def eval_transformer(args):
     if args.model == 'linear':
         model = torch.nn.Linear(1024,args.num_classes)
     else:
@@ -290,15 +289,12 @@ def eval_model(args):
 
         predictions = torch.zeros((len(feature_all),args.num_classes))
         with torch.no_grad():
-            for i in range(len(feature_all)):
-                feats = features[i,:]
-
-                model = model.cuda()
-
-                feats = feats.cuda().unsqueeze(0)
-
-                output = model(feats)
-                predictions[i,:] = output.cpu()
+            feats = features 
+            feats = feats.cuda()
+            model=  model.cuda()
+            output = model(feats)
+            predictions = output.cpu()
+            
 
         if 'after_softmax' in args.multi_region_pixels:
             # averaging softmax values for pixels in multiple regions
@@ -341,31 +337,25 @@ def eval_model(args):
         all_pixel_predictions.append(final_pixel_pred)
     return all_pixel_predictions, file_names
 
-def compute_iou(args,predictions,file_names,epoch):
+def compute_iou(args,predictions,file_names):
     actual_labels = []
     for file in tqdm(file_names):
         actual = np.array(Image.open(os.path.join(args.annotation_dir,file.replace('.pkl','.png'))))
         actual_labels.append(actual)
-
-    # Handle predictions where there were no regions
-    predictions = [np.full(actual.shape, 255) if p is None else p for p, actual in zip(predictions, actual_labels)]
-
     if args.ignore_zero:
         num_classes = args.num_classes -1
         reduce_labels = True
-        reduce_pred_labels=True 
-
+        reduce_pred_labels = True 
     else:
         num_classes = args.num_classes
         reduce_labels = False
         reduce_pred_labels=False 
     if args.ade:
-        assert reduce_labels=True 
-        assert reduce_pred_labels=True 
-   
+        assert reduce_labels=True
+        assert reduce_pred_labels=True
     miou = mean_iou(results=predictions,gt_seg_maps=actual_labels,num_labels=num_classes,ignore_index=255,reduce_labels=reduce_labels,reduce_pred_labels=reduce_pred_labels)
     print(miou)
-    utils.save_file(os.path.join(args.results_dir,f'mean_iou_epoch_{epoch}.json'),miou,json_numpy=True)
+    utils.save_file(os.path.join(args.results_dir,'mean_iou.json'),miou,json_numpy=True)
 
 def train_and_evaluate(args):
     if args.num_classes != 151 and args.num_classes!= 21:
@@ -376,22 +366,10 @@ def train_and_evaluate(args):
     if args.ade:
         print('Training and evaluating on ADE. Make sure to use the correct region label directory!')
     if not args.eval_only:
-        train_model(args)
+        train_transformer(args)
+    all_pixel_predictions, file_names = eval_transformer(args)
+    compute_iou(args,all_pixel_predictions,file_names)
 
-    all_pixel_predictions, file_names = eval_model(args)
-    compute_iou(args,all_pixel_predictions,file_names,args.epochs)
-    # Save pixel predictions as PNGs for use on evaluation server
-    if args.output_predictions:
-        print('Saving predictions to PNGs')
-        prediction_dir = os.path.join(args.results_dir, 'predictions')
-        os.makedirs(prediction_dir, exist_ok=True)
-
-        for file_name, prediction in tqdm(zip(file_names, all_pixel_predictions)):
-            prediction = Image.fromarray(prediction.astype(np.uint8))
-            prediction.save(os.path.join(prediction_dir, file_name.replace('.pkl', '.png')))
-
-    else: # No need to output predictions if evaluating here
-        compute_iou(args,all_pixel_predictions,file_names,args.epochs)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -420,18 +398,6 @@ if __name__ == '__main__':
         "--ignore_zero",
         action="store_true",
         help="Include 0 class"
-    )
-    parser.add_argument(
-        "--train_data_file",
-        type=str,
-        default=None,
-        help="Location of region data."
-    )
-    parser.add_argument(
-        "--val_data_file",
-        type=str,
-        default=None,
-        help="Location of region data. Created if None"
     )
     parser.add_argument(
         "--train_region_feature_dir",
@@ -463,13 +429,13 @@ if __name__ == '__main__':
         action="store_true",
         help="No classifier training"
     )
-    parser.add_argument("--dataset_name",type=str,default='ade')
+
 
     parser.add_argument(
-        "--lr",
+        "--mlp_lr",
         type=float,
         default=.0001,
-        help="learning rate"
+        help="Use mlp"
     )
 
     parser.add_argument(
@@ -490,11 +456,6 @@ if __name__ == '__main__':
         default="avg_after_softmax",
         help="What to do for pixels in multiple regions. Default is average over probabilities after softmax"
     )
-    parser.add_argument(
-        "--model",
-        type=str,
-        default="linear",
-        help="linear or mlp")
 
     parser.add_argument("--use_pos_embd",
     action="store_true",
@@ -515,39 +476,30 @@ if __name__ == '__main__':
         help="Number of classes in dataset"
     )
     parser.add_argument(
-        "--batch_size",
-        type=int,
-        default=8192,
-        help="Batch"
+        "--dataset_name",
+        type=str,
+        default='ade',
+        help="If ade or not"
     )
     parser.add_argument(
         "--iou_every",
         type=int,
-        default=1,
-        help="Compute iou every"
-    )
-    parser.add_argument(
-        "--hidden_channels",
-        type=int,
-        default=512,
-        help="hidden channel size if used"
-    )
-    parser.add_argument(
-        "--input_channels",
-        type=int,
-        default=384,
-        help="input channel size depending on models"
-    )
-    parser.add_argument(
-        '--output_predictions',
-        action='store_true',
-        help='Output predictions as PNGs'
-    )
-    parser.add_argument(
-        '--ade',
-        action='store_true',
-        help='Output predictions as PNGs'
+        default=10,
+        help="when to compute iou"
     )
 
+    parser.add_argument(
+        "--accumulate_grad_batches",
+        type=int,
+        default=1,
+        help="Number of batches to perform gradient accumulation over."
+    )
+    parser.add_argument(
+        "--ade",
+        action='store_true',
+        
+        help="Flag for ade."
+    )
     args = parser.parse_args()
     train_and_evaluate(args)
+
