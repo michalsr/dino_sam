@@ -541,7 +541,7 @@ if __name__ == '__main__':
         "--input_channels",
         type=int,
         default=1024,
-gs        help="input channel size depending on models"
+        help="input channel size depending on models"
     )
     parser.add_argument(
         '--output_predictions',
