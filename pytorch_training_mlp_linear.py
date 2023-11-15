@@ -125,7 +125,7 @@ def eval_acc(args,model,epoch):
         criterion = nn.CrossEntropyLoss(reduction='sum',ignore_index=0)
     else:
         criterion = nn.CrossEntropyLoss(reduction='sum')
-    mca = MulticlassAccuracy(num_classes=args.num_classes, average='micro',top_k=1)
+    mca = MulticlassAccuracy(num_classes=args.num_classes+1, average='micro',top_k=1)
     predictions = []
     all_labels = []
     total_regions = 0
@@ -145,7 +145,7 @@ def eval_acc(args,model,epoch):
 
 
             # Reshape outputs and labels for loss calculation
-            outputs = outputs.view(-1, args.num_classes)
+            outputs = outputs.view(-1, args.num_classes+1)
             predictions.append(outputs.cpu())
             # print(outputs.shape)
             labels = labels.view(-1)
@@ -168,9 +168,9 @@ def eval_acc(args,model,epoch):
 def train_model(args):
     dataset = FeatureDataset(region_feat_dir=args.train_region_feature_dir,region_labels_dir=args.train_region_labels_dir,pos_embd_dir=args.train_pos_embd_dir,data_file=args.train_data_file)
     if args.model == 'linear':
-        model = torch.nn.Linear(args.input_channels,args.num_classes)
+        model = torch.nn.Linear(args.input_channels,args.num_classes+1)
     else:
-        model = torchvision.ops.MLP(in_channels=args.input_channels,hidden_channels=[args.hidden_channels,args.num_classes])
+        model = torchvision.ops.MLP(in_channels=args.input_channels,hidden_channels=[args.hidden_channels,args.num_classes+1])
 
     eval_acc(args,model,1)
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
@@ -180,7 +180,7 @@ def train_model(args):
     else:
         criterion = nn.CrossEntropyLoss(reduction='none')
     epochs = args.epochs
-    mca = MulticlassAccuracy(num_classes=args.num_classes, average='micro',top_k=1)
+    mca = MulticlassAccuracy(num_classes=args.num_classes+1, average='micro',top_k=1)
     # batch is over total number of regions so can make it very large (8192)
     dataloader = torch.utils.data.DataLoader(dataset,batch_size=args.batch_size,shuffle=True)
     print(f'Train dataloader length with batch size {args.batch_size}: {len(dataloader)}')
@@ -203,7 +203,7 @@ def train_model(args):
             outputs = model(region_feats)
             outputs = outputs.squeeze()
 
-            outputs = outputs.view(-1, args.num_classes)
+            outputs = outputs.view(-1, args.num_classes+1)
 
             labels = labels.view(-1)
             weight = weight.cuda()
@@ -216,6 +216,7 @@ def train_model(args):
             optimizer.step()
             optimizer.zero_grad()
             with torch.no_grad():
+       
                 train_acc += (mca(outputs.cpu(),labels.cpu()).item() * labels.size()[0])
 
 
@@ -241,7 +242,7 @@ def eval_model(args):
     if args.model == 'linear':
         model = torch.nn.Linear(args.input_channels, args.num_classes)
     else:
-        model = torchvision.ops.MLP(in_channels=args.input_channels,hidden_channels=[args.hidden_channels,args.num_classes])
+        model = torchvision.ops.MLP(in_channels=args.input_channels,hidden_channels=[args.hidden_channels,args.num_classes+1])
     
     model.load_state_dict(torch.load(os.path.join(args.save_dir,'model.pt')))
     model.eval()
@@ -292,7 +293,7 @@ def eval_model(args):
         features = torch.tensor(np.stack(feature_all))
         features = features[region_idx,:]
 
-        predictions = torch.zeros((len(feature_all),args.num_classes))
+        predictions = torch.zeros((len(feature_all),args.num_classes+1))
         with torch.no_grad():
             for i in range(len(feature_all)):
                 feats = features[i,:]
@@ -354,27 +355,27 @@ def compute_iou(args,predictions,file_names,epoch):
     # Handle predictions where there were no regions
     predictions = [np.full(actual.shape, 255) if p is None else p for p, actual in zip(predictions, actual_labels)]
 
-    if args.ignore_zero:
-        num_classes = args.num_classes -1
+    if args.ignore_zero or args.ade:
+        num_classes = args.num_classes-1
         reduce_labels = True
         reduce_pred_labels=True 
 
     else:
-        num_classes = args.num_classes
+        num_classes = args.num_classes+1
         reduce_labels = False
         reduce_pred_labels=False 
     if args.ade==True:
         assert reduce_labels==True 
         assert reduce_pred_labels==True 
-   
+        aassert num_classes == 149
     miou = mean_iou(results=predictions,gt_seg_maps=actual_labels,num_labels=num_classes,ignore_index=255,reduce_labels=reduce_labels,reduce_pred_labels=reduce_pred_labels)
     print(miou)
     utils.save_file(os.path.join(args.results_dir,f'mean_iou_epoch_{epoch}.json'),miou,json_numpy=True)
 
 def train_and_evaluate(args):
-    if args.num_classes != 151 and args.num_classes!= 21:
-        raise ValueError('ADE should have 151 and Pascal VOC should have 21')
-    if args.num_classes == 151:
+    if args.num_classes != 150 and args.num_classes!= 20:
+        raise ValueError('ADE should have 150 and Pascal VOC should have 20. The background class is taken care of in the code')
+    if args.num_classes == 150:
         if args.ade ==False:
             raise ValueError('If using ADE then ade argument should be set to True')
     if args.ade==True:

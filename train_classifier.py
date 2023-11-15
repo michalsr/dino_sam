@@ -65,7 +65,7 @@ def per_pixel_prediction(args):
         else:
             predictions = loaded_model.decision_function(features)
        
-        assert predictions.shape == (len(feature_all),args.num_classes)
+        assert predictions.shape == (len(feature_all),args.num_classes+1)
         if 'after_softmax' in args.multi_region_pixels:
             # averaging softmax values for pixels in multiple regions
             class_predictions = softmax(predictions,axis=1)
@@ -101,17 +101,19 @@ def compute_iou(args,predictions,file_names):
     for file in tqdm(file_names):
         actual = np.array(Image.open(os.path.join(args.annotation_dir,file.replace('.pkl','.png'))))
         actual_labels.append(actual)
+    # num classes = highest index
     if args.ignore_zero:
-        num_classes = args.num_classes -1 
+        num_classes = args.num_classes -1
         reduce_labels = True
         reduce_pred_labels = True 
     else:
-        num_classes = args.num_classes 
+        num_classes = args.num_classes +1
         reduce_labels = False
         reduce_pred_labels=False 
     if args.ade==True:
         assert reduce_labels==True 
-        assert reduce_pred_labels==True 
+        assert reduce_pred_labels==True
+        assert num_classes == 149 
     miou = mean_iou(results=predictions,gt_seg_maps=actual_labels,num_labels=num_classes,ignore_index=255,reduce_labels=reduce_labels,reduce_pred_labels=reduce_pred_labels)
     print(miou)
     utils.save_file(os.path.join(args.results_dir,'mean_iou.json'),miou,json_numpy=True)
@@ -183,7 +185,7 @@ def load_features(args,split='train'):
         except:
             continue 
         file_labels = utils.open_file(os.path.join(label_dir,file_name))
-        print(len(file_labels),len(file_features))
+      
 
         for i, area in enumerate(file_features):
             if pos_embd_dir != None:
@@ -265,9 +267,9 @@ def evaluate_classifier(args, class_id):
 
 
 def train_and_evaluate(args):
-    if args.num_classes != 151 and args.num_classes!= 21:
-        raise ValueError('ADE should have 151 and Pascal VOC should have 21')
-    if args.num_classes == 151:
+    if args.num_classes != 150 and args.num_classes!= 20:
+        raise ValueError('ADE should have 150 and Pascal VOC should have 21')
+    if args.num_classes == 150:
         if args.ade ==False:
             raise ValueError('If using ADE then ade argument should be set to True')
     if args.eval_only:
@@ -363,11 +365,7 @@ if __name__ == '__main__':
         action="store_false",
         help="Whether to use area as weight."
     )
-    parser.add_argument(
-        "--ignore_unlabeled",
-        action="store_false",
-        help="Whether to only train regions which have a particular label. Turn off for vaw"
-    )
+
     parser.add_argument(
         "--balance_classes",
         action="store_true",
