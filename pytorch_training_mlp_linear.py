@@ -367,7 +367,7 @@ def compute_iou(args,predictions,file_names,epoch):
     if args.ade==True:
         assert reduce_labels==True 
         assert reduce_pred_labels==True 
-        aassert num_classes == 149
+        assert num_classes == 149
     miou = mean_iou(results=predictions,gt_seg_maps=actual_labels,num_labels=num_classes,ignore_index=255,reduce_labels=reduce_labels,reduce_pred_labels=reduce_pred_labels)
     print(miou)
     utils.save_file(os.path.join(args.results_dir,f'mean_iou_epoch_{epoch}.json'),miou,json_numpy=True)
