@@ -65,7 +65,7 @@ def per_pixel_prediction(args):
         else:
             predictions = loaded_model.decision_function(features)
        
-        assert predictions.shape == (len(feature_all),args.num_classes+1)
+        #assert predictions.shape == (len(feature_all))
         if 'after_softmax' in args.multi_region_pixels:
             # averaging softmax values for pixels in multiple regions
             class_predictions = softmax(predictions,axis=1)
@@ -92,6 +92,8 @@ def per_pixel_prediction(args):
         final_pixel_pred = np.zeros((h,w))
         # index back into original shape
         final_pixel_pred[nonzero_mask[0],nonzero_mask[1]] = np.argmax(nonzero_region_pixel_preds,axis=1)
+        if np.max(final_pixel_pred) == 150.0:
+            print('Max')
         all_pixel_predictions.append(final_pixel_pred)
     return all_pixel_predictions, file_names 
 
@@ -105,14 +107,14 @@ def compute_iou(args,predictions,file_names):
     if args.ignore_zero:
         num_classes = args.num_classes -1
         reduce_labels = True
-        reduce_pred_labels = True 
+        reduce_pred_labels = False 
     else:
         num_classes = args.num_classes +1
         reduce_labels = False
         reduce_pred_labels=False 
     if args.ade==True:
         assert reduce_labels==True 
-        assert reduce_pred_labels==True
+        assert reduce_pred_labels==False
         assert num_classes == 149 
     miou = mean_iou(results=predictions,gt_seg_maps=actual_labels,num_labels=num_classes,ignore_index=255,reduce_labels=reduce_labels,reduce_pred_labels=reduce_pred_labels)
     print(miou)

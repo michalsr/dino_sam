@@ -91,6 +91,7 @@ class FeatureDataset(Dataset):
             if area_label[target_label] == 1:
                 all_feats.append(area_feature)
                 all_weight.append(area_weight)
+                all_labels.append(target_label)
 
        
         if len(all_feats) == 0:
@@ -109,7 +110,7 @@ def eval_acc(args,model):
     dataset = FeatureDataset(region_feat_dir=args.val_region_feature_dir,region_labels_dir=args.val_region_labels_dir,pos_embd_dir=args.val_pos_embd_dir,args=args)
     dataloader = torch.utils.data.DataLoader(dataset,batch_size=1,shuffle=False)
     criterion = nn.CrossEntropyLoss(reduction='sum')
-    mca = MulticlassAccuracy(num_classes=args.num_classes, average='micro',top_k=1)
+    mca = MulticlassAccuracy(num_classes=args.num_classes+1, average='micro',top_k=1)
     batch_acc = 0
     predictions = []
     all_labels = []
@@ -164,7 +165,8 @@ def train_transformer(args):
     # ANSEL batch size will be the number of images in a batch, not regions
     dataloader = torch.utils.data.DataLoader(dataset,batch_size=args.batch_size,shuffle=True)
 
-    mca = MulticlassAccuracy(num_classes=args.num_classes, average='micro',top_k=1)
+    mca = MulticlassAccuracy(num_classes=args.num_classes+1, average='micro',top_k=1)
+    mca = mca.to(device='cuda')
     for epoch in range(epochs):  # Example number of epochs
         model = model.cuda()
         for i, data in enumerate(tqdm(dataloader), start=1):
@@ -189,11 +191,11 @@ def train_transformer(args):
             # ANSEL Compute loss and take optimizer step every accumulate_grad_batches batches.
             # Effective image batch size is then args.batch_size * args.accumulate_grad_batches
             if args.use_weight:
-                weight = torch.nn.functional.normalize(weight.float(),dim=0)
-                loss = (citerion(outputs,labels)*weights.cuda()).mean()
+                weights = torch.nn.functional.normalize(weights.float(),dim=0)
+                loss = (criterion(outputs,labels)*weights.cuda()).mean()
             else:
                 loss = criterion(outputs,labels)
-            loss = criterion(outputs, labels)
+            
             loss = loss / args.accumulate_grad_batches # ANSEL accumulate_grad_batches is 1 by default
             loss.backward()
 
@@ -207,7 +209,7 @@ def train_transformer(args):
 
         train_acc = mca.compute()
         print(f"Train_acc:{train_acc}")
-        metrics = {'val_loss':val_loss,'val_acc':val_acc,'train_acc':train_acc,'train_loss':loss.item()}
+        metrics = {'val_loss':val_loss,'val_acc':val_acc,'train_acc':train_acc.item(),'train_loss':loss.item()}
         utils.save_file(os.path.join(args.results_dir,f'metrics_epoch_{epoch}.json'),metrics,json_numpy=True)
 
         if (epoch+1)%args.iou_every==0:
@@ -388,7 +390,18 @@ if __name__ == '__main__':
         default=None,
         help="Location of features for each region in val images"
     )
-
+    parser.add_argument(
+        "--batch_size",
+        type=int,
+        default=1,
+        help="Location of features for each region in val images"
+    )
+    parser.add_argument(
+        "--use_weight",
+        action='store_true',
+        default=None,
+        help="Location to store trained classifiers"
+    )
     parser.add_argument(
         "--save_dir",
         type=str,
@@ -409,10 +422,10 @@ if __name__ == '__main__':
 
 
     parser.add_argument(
-        "--mlp_lr",
+        "--lr",
         type=float,
         default=.0001,
-        help="Use mlp"
+        help="lr"
     )
 
     parser.add_argument(

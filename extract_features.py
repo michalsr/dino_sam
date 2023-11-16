@@ -169,7 +169,8 @@ def extract_imagenet(args, model, image):
         W, H = image.size
         patch_H, patch_W = math.ceil(H / args.multiple), math.ceil(W / args.multiple)
         features = features.permute(0, 2, 1).view(B, C, patch_H, patch_W)
-        
+        if any(torch.isnan(features)):
+            raise ValueError 
     return features.detach().cpu().to(torch.float32).numpy()
     
 def extract_features(model, args, preprocess=None):

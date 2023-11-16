@@ -177,9 +177,13 @@ def train_model(args):
             image_preds_l, labels_l = get_model_outputs(feats_l, labels_l, model)
 
             loss, preds, labels = compute_loss(image_preds_l, labels_l, criterion)
+            
+            loss = loss/args.accumulate_grad_batches
             loss.backward()
-            optimizer.step()
-            optimizer.zero_grad()
+            
+            if i%args.accumulate_grad_batches == 0 or i==len(dataloader):
+                optimizer.step()
+                optimizer.zero_grad()
 
             mca(preds.detach(), labels)
 
@@ -451,7 +455,6 @@ if __name__ == '__main__':
         action='store_true',
         help='Whether to log results to wandb'
     )
-
     parser.add_argument(
         '--limit_files_to_frac',
         type=float,
@@ -464,35 +467,40 @@ if __name__ == '__main__':
         type=str,
         default='cuda' if torch.cuda.is_available() else 'cpu'
     )
-
+    parser.add_argument(
+        "--accumulate_grad_batches",
+        type=int,
+        default=1,
+        help="Number of batches to perform gradient accumulation over."
+    )
     args = parser.parse_args()
 
     # Set run name as YYYY-MM-DD_HH-MM-SS
     run_name = time.strftime("%Y-%m-%d_%H-%M-%S")
-    args = parser.parse_args([
-        # '--train_img_feature_dir', '/shared/rsaas/dino_sam/features/dinov2/ADE20K/train',
+    # args = parser.parse_args([
+    #     # '--train_img_feature_dir', '/shared/rsaas/dino_sam/features/dinov2/ADE20K/train',
 
-        # Pascal parameters
-        '--train_img_feature_dir', '/shared/rsaas/dino_sam/features/denseclip/pascal_voc/train',
-        '--train_seg_label_dir', '/shared/rsaas/dino_sam/data/VOCdevkit/VOC2012/segmentation_annotation/train',
+    #     # Pascal parameters
+    #     '--train_img_feature_dir', '/shared/rsaas/dino_sam/features/denseclip/pascal_voc/train',
+    #     '--train_seg_label_dir', '/shared/rsaas/dino_sam/data/VOCdevkit/VOC2012/segmentation_annotation/train',
 
-        '--val_img_feature_dir', '/shared/rsaas/dino_sam/features/denseclip/pascal_voc/val',
-        '--val_seg_label_dir', '/shared/rsaas/dino_sam/data/VOCdevkit/VOC2012/segmentation_annotation/val',
+    #     '--val_img_feature_dir', '/shared/rsaas/dino_sam/features/denseclip/pascal_voc/val',
+    #     '--val_seg_label_dir', '/shared/rsaas/dino_sam/data/VOCdevkit/VOC2012/segmentation_annotation/val',
 
-        '--num_classes', '20',
+    #     '--num_classes', '20',
 
-        # General parameters
-        '--backbone_model', 'denseclip',
-        '--epochs', '20',
+    #     # General parameters
+    #     '--backbone_model', 'denseclip',
+    #     '--epochs', '20',
 
-        '--save_dir', f'/home/blume5/shared/dinov1_linear/pascal_voc/runs/{run_name}/checkpoints',
-        '--results_dir', f'/home/blume5/shared/dinov1_linear/pascal_voc/runs/{run_name}/results',
+    #     '--save_dir', f'/home/blume5/shared/dinov1_linear/pascal_voc/runs/{run_name}/checkpoints',
+    #     '--results_dir', f'/home/blume5/shared/dinov1_linear/pascal_voc/runs/{run_name}/results',
 
-        '--lr', '1e-3',
-        '--batch_size', '8',
-        '--iou_every', '10000',
-        '--log_to_wandb',
-    ])
+    #     '--lr', '1e-3',
+    #     '--batch_size', '8',
+    #     '--iou_every', '10000',
+    #     '--log_to_wandb',
+    # ])
 
     # args = parser.parse_args([
     #     # '--train_img_feature_dir', '/shared/rsaas/dino_sam/features/dinov2/ADE20K/train',
