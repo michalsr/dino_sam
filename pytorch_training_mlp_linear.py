@@ -71,7 +71,7 @@ def get_all_features(region_feat_dir, region_labels_dir,pos_embd_dir,data_file):
     for file_name in tqdm(os.listdir(region_feat_dir)):
         region_feats = utils.open_file(os.path.join(region_feat_dir,file_name))
         labels = utils.open_file(os.path.join(region_labels_dir,file_name))
-
+        
         if pos_embd_dir is not None:
             pos_embd = utils.open_file(os.path.join(pos_embd_dir,file_name))
 
@@ -115,8 +115,7 @@ class FeatureDataset(Dataset):
         labels = self.labels[idx]
         weight = self.weight[idx]
         return torch.tensor(region_feats), torch.tensor(labels), torch.tensor(weight)
-
-def eval_acc(args,model: torch.nn.Module ,epoch):
+def eval_acc(args,model,epoch):
     dataset = FeatureDataset(region_feat_dir=args.val_region_feature_dir,region_labels_dir=args.val_region_labels_dir,pos_embd_dir=args.val_pos_embd_dir,data_file=args.val_data_file)
     dataloader = torch.utils.data.DataLoader(dataset,batch_size=1,shuffle=False)
 
@@ -129,15 +128,16 @@ def eval_acc(args,model: torch.nn.Module ,epoch):
     all_labels = []
     total_regions = 0
     all_loss = 0
-    model.cuda().eval()
+    model.eval()
     with torch.no_grad():
         for i, data in enumerate(tqdm(dataloader)):
             region_feats, labels, weight= data
             total_regions += len(labels)
+            model = model.cuda()
 
             labels = labels.cuda()
             region_feats = region_feats.cuda()
-            outputs = model(region_feats)
+            outputs = model(region_feats.float())
 
             outputs = outputs.squeeze()
 
@@ -186,7 +186,8 @@ def train_model(args):
     total_regions = 0
     for epoch in range(epochs):  # Example number of epochs
         batch_loss = 0
-        model.train().cuda()
+        model = model.cuda()
+        model.train()
         num_regions = 0
         train_acc = 0
         for i, data in enumerate(tqdm(dataloader)):
@@ -196,7 +197,7 @@ def train_model(args):
             region_feats = region_feats.cuda()
             labels = labels.cuda()
 
-            outputs = model(region_feats)
+            outputs = model(region_feats.float())
             outputs = outputs.squeeze()
 
             outputs = outputs.view(-1, args.num_classes+1)
@@ -211,9 +212,11 @@ def train_model(args):
             loss.backward()
             optimizer.step()
             optimizer.zero_grad()
-
             with torch.no_grad():
+
                 train_acc += (mca(outputs.cpu(),labels.cpu()).item() * labels.size()[0])
+
+
 
         print(f"Epoch {epoch + 1}, Loss: {loss.item()}")
 
@@ -245,8 +248,9 @@ def eval_model(args):
         model = torchvision.ops.MLP(in_channels=args.input_channels,hidden_channels=[args.hidden_channels,args.num_classes+1])
 
     model.load_state_dict(torch.load(os.path.join(args.save_dir,'model.pt')))
-    model.cuda().eval()
+    model.eval()
     class_preds = []
+    model = model.cuda()
     all_pixel_predictions = []
     # keep track of order of predictions
     file_names = []
@@ -269,7 +273,7 @@ def eval_model(args):
             if args.val_pos_embd_dir is None:
                 features = area['region_feature']
             else:
-                features = area['region_feature'] + pos_embd[i,:]
+                features = area['region_feature'] + pos_embd[j,:]
 
             feature_all.append(features)
 
@@ -294,7 +298,13 @@ def eval_model(args):
 
         predictions = torch.zeros((len(feature_all),args.num_classes+1))
         with torch.no_grad():
-            output = model(features.cuda())
+            feats = features
+
+            model = model.cuda()
+
+            feats = feats.cuda()
+
+            output = model(feats.float())
             predictions = output.cpu()
 
         if 'after_softmax' in args.multi_region_pixels:
