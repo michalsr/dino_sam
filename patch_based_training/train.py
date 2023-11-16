@@ -65,7 +65,9 @@ class SegmentationDataset(Dataset):
 
     def __getitem__(self, idx):
         image_feat_path = self.image_feat_paths[idx]
-        image_feat = torch.from_numpy(utils.open_file(image_feat_path))
+        image_feat = utils.open_file(image_feat_path)
+        if isinstance(image_feat, np.ndarray):
+            image_feat = torch.from_numpy(image_feat)
 
         # TODO add reshaping cases for all models' features
         if self.model_name == 'dinov2':
@@ -463,33 +465,59 @@ if __name__ == '__main__':
         default='cuda' if torch.cuda.is_available() else 'cpu'
     )
 
-    # args = parser.parse_args()
+    args = parser.parse_args()
+
     # Set run name as YYYY-MM-DD_HH-MM-SS
     run_name = time.strftime("%Y-%m-%d_%H-%M-%S")
     args = parser.parse_args([
         # '--train_img_feature_dir', '/shared/rsaas/dino_sam/features/dinov2/ADE20K/train',
 
         # Pascal parameters
-        '--train_img_feature_dir', '/shared/rsaas/dino_sam/features/dinov2/pascal_voc_layer_23/train',
+        '--train_img_feature_dir', '/shared/rsaas/dino_sam/features/denseclip/pascal_voc/train',
         '--train_seg_label_dir', '/shared/rsaas/dino_sam/data/VOCdevkit/VOC2012/segmentation_annotation/train',
 
-        '--val_img_feature_dir', '/shared/rsaas/dino_sam/features/dinov2/pascal_voc_layer_23/val',
+        '--val_img_feature_dir', '/shared/rsaas/dino_sam/features/denseclip/pascal_voc/val',
         '--val_seg_label_dir', '/shared/rsaas/dino_sam/data/VOCdevkit/VOC2012/segmentation_annotation/val',
 
         '--num_classes', '20',
 
         # General parameters
-        '--backbone_model', 'dinov2',
+        '--backbone_model', 'denseclip',
         '--epochs', '20',
 
-        '--save_dir', f'/home/blume5/shared/dinov2_linear/pascal_voc/runs/{run_name}/checkpoints',
-        '--results_dir', f'/home/blume5/shared/dinov2_linear/pascal_voc/runs/{run_name}/results',
+        '--save_dir', f'/home/blume5/shared/dinov1_linear/pascal_voc/runs/{run_name}/checkpoints',
+        '--results_dir', f'/home/blume5/shared/dinov1_linear/pascal_voc/runs/{run_name}/results',
 
         '--lr', '1e-3',
         '--batch_size', '8',
         '--iou_every', '10000',
         '--log_to_wandb',
     ])
+
+    # args = parser.parse_args([
+    #     # '--train_img_feature_dir', '/shared/rsaas/dino_sam/features/dinov2/ADE20K/train',
+
+    #     # Pascal parameters
+    #     '--train_img_feature_dir', '/shared/rsaas/dino_sam/features/dinov1/pascal_voc_layer_11/train',
+    #     '--train_seg_label_dir', '/shared/rsaas/dino_sam/data/VOCdevkit/VOC2012/segmentation_annotation/train',
+
+    #     '--val_img_feature_dir', '/shared/rsaas/dino_sam/features/dinov1/pascal_voc_layer_11/val',
+    #     '--val_seg_label_dir', '/shared/rsaas/dino_sam/data/VOCdevkit/VOC2012/segmentation_annotation/val',
+
+    #     '--num_classes', '20',
+
+    #     # General parameters
+    #     '--backbone_model', 'dinov1',
+    #     '--epochs', '20',
+
+    #     '--save_dir', f'/home/blume5/shared/dinov1_linear/pascal_voc/runs/{run_name}/checkpoints',
+    #     '--results_dir', f'/home/blume5/shared/dinov1_linear/pascal_voc/runs/{run_name}/results',
+
+    #     '--lr', '1e-3',
+    #     '--batch_size', '8',
+    #     '--iou_every', '10000',
+    #     '--log_to_wandb',
+    # ])
 
     # Try to detect whether the dataset is ADE20K, and if so, force the user to set the flag
     dirs = [
