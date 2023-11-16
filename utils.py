@@ -9,7 +9,7 @@ from pathlib import Path
 from tqdm import tqdm
 import math
 import torch
-from PIL import Image, ImageDraw 
+from PIL import Image, ImageDraw
 import warnings
 import stat
 def save_file(filename,data,json_numpy=False):
@@ -237,7 +237,7 @@ def total_intersect_and_union(
     total_area_union = np.zeros((num_labels,), dtype=np.float64)
     total_area_pred_label = np.zeros((num_labels,), dtype=np.float64)
     total_area_label = np.zeros((num_labels,), dtype=np.float64)
-    for result, gt_seg_map in tqdm(zip(results, gt_seg_maps)):
+    for result, gt_seg_map in tqdm(zip(results, gt_seg_maps), total=len(results)):
         area_intersect, area_union, area_pred_label, area_label = intersect_and_union(
             result, gt_seg_map, num_labels, ignore_index, label_map, reduce_labels, reduce_pred_labels
         )
