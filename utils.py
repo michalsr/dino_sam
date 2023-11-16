@@ -61,14 +61,14 @@ def open_file(filename):
     elif file_ext in [".npy",".npz"]:
         data = np.load(filename,allow_pickle=True)
     elif file_ext == '.json':
-        with open(filename,'r') as fopen:
+        with open(filename,'r+') as fopen:
             data = json.load(fopen)
     elif file_ext == ".yaml":
         with open(filename,'r+') as fopen:
             data = yaml.load(fopen,Loader=yaml.FullLoader)
     else:
         # assume pickle
-        with open(filename,"rb") as fopen:
+        with open(filename,"rb+") as fopen:
             data = pickle.load(fopen)
     return data
 
