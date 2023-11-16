@@ -169,7 +169,7 @@ def train_model(args):
     logger.info(f'Train dataloader length with batch size {args.batch_size}: {len(dataloader)}')
 
     # Start training
-    for epoch in range(epochs):
+    for i,epoch in enumerate(range(epochs)):
         model.train()
         mca.reset()
 
