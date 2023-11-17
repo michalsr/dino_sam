@@ -70,13 +70,18 @@ class SegmentationDataset(Dataset):
         if isinstance(image_feat, np.ndarray):
             image_feat = torch.from_numpy(image_feat)
 
-        # TODO add reshaping cases for all models' features
+        # Modify based on model's saved features
         if self.model_name == 'dinov2':
             pass # Already in shape (1, c, nph, npw)
         elif self.model_name == 'clip':
+<<<<<<< HEAD
             n,hw,c = image_feat.size()
             image_feat = image_feat.permute(0, 2, 1).view(n,c,7,7)
             #image_feat = rearrange(image_feat, 'n b d -> n h e d',h=7,e=7) # ViT-L/14
+=======
+            image_feat = rearrange(image_feat, 'n (h w) d -> n h w d', h=16, w=16) # ViT-L/14
+            image_feat = image_feat.float() # Saved in half precision
+>>>>>>> b66bd87 (PCA and SAM blending visualization)
         elif self.model_name == 'dinov1':
             pass # Already in shape (1, c, nph, npw)
         elif self.model_name == 'denseclip':
@@ -484,21 +489,39 @@ if __name__ == '__main__':
     # args = parser.parse_args([
     #     # '--train_img_feature_dir', '/shared/rsaas/dino_sam/features/dinov2/ADE20K/train',
 
+<<<<<<< HEAD
     #     # Pascal parameters
     #     '--train_img_feature_dir', '/shared/rsaas/dino_sam/features/denseclip/pascal_voc/train',
     #     '--train_seg_label_dir', '/shared/rsaas/dino_sam/data/VOCdevkit/VOC2012/segmentation_annotation/train',
 
     #     '--val_img_feature_dir', '/shared/rsaas/dino_sam/features/denseclip/pascal_voc/val',
     #     '--val_seg_label_dir', '/shared/rsaas/dino_sam/data/VOCdevkit/VOC2012/segmentation_annotation/val',
+=======
+        # Pascal parameters
+        '--train_img_feature_dir', '/shared/rsaas/dino_sam/features/clip/pascal_voc/train',
+        '--train_seg_label_dir', '/shared/rsaas/dino_sam/data/VOCdevkit/VOC2012/segmentation_annotation/train',
+
+        '--val_img_feature_dir', '/shared/rsaas/dino_sam/features/clip/pascal_voc/val',
+        '--val_seg_label_dir', '/shared/rsaas/dino_sam/data/VOCdevkit/VOC2012/segmentation_annotation/val',
+>>>>>>> b66bd87 (PCA and SAM blending visualization)
 
     #     '--num_classes', '20',
 
+<<<<<<< HEAD
     #     # General parameters
     #     '--backbone_model', 'denseclip',
     #     '--epochs', '20',
 
     #     '--save_dir', f'/home/blume5/shared/dinov1_linear/pascal_voc/runs/{run_name}/checkpoints',
     #     '--results_dir', f'/home/blume5/shared/dinov1_linear/pascal_voc/runs/{run_name}/results',
+=======
+        # General parameters
+        '--backbone_model', 'clip',
+        '--epochs', '20',
+
+        '--save_dir', f'/home/blume5/shared/clip_linear/pascal_voc/runs/{run_name}/checkpoints',
+        '--results_dir', f'/home/blume5/shared/clip_linear/pascal_voc/runs/{run_name}/results',
+>>>>>>> b66bd87 (PCA and SAM blending visualization)
 
     #     '--lr', '1e-3',
     #     '--batch_size', '8',
@@ -556,8 +579,14 @@ if __name__ == '__main__':
         import wandb
         wandb.init(project='dino_sam_patch_pred', config=args)
 
+<<<<<<< HEAD
     args.val_ds = SegmentationDataset(args.val_img_feature_dir, args.val_seg_label_dir,model_name=args.backbone_model)
     if not args.eval_only:
         args.train_ds = SegmentationDataset(args.train_img_feature_dir, args.train_seg_label_dir, limit_files_to_frac=args.limit_files_to_frac,model_name=args.backbone_model)
+=======
+    args.val_ds = SegmentationDataset(args.val_img_feature_dir, args.val_seg_label_dir, model_name=args.backbone_model)
+    if not args.eval_only:
+        args.train_ds = SegmentationDataset(args.train_img_feature_dir, args.train_seg_label_dir, limit_files_to_frac=args.limit_files_to_frac, model_name=args.backbone_model)
+>>>>>>> b66bd87 (PCA and SAM blending visualization)
 
     train_and_evaluate(args)
