@@ -64,6 +64,7 @@ class SegmentationDataset(Dataset):
         return len(self.image_feat_paths)
 
     def __getitem__(self, idx):
+
         image_feat_path = self.image_feat_paths[idx]
         image_feat = utils.open_file(image_feat_path)
         if isinstance(image_feat, np.ndarray):
@@ -73,7 +74,9 @@ class SegmentationDataset(Dataset):
         if self.model_name == 'dinov2':
             pass # Already in shape (1, c, nph, npw)
         elif self.model_name == 'clip':
-            image_feat = rearrange(image_feat, 'n (h h) d -> n h h d', h = 14) # ViT-L/14
+            n,hw,c = image_feat.size()
+            image_feat = image_feat.permute(0, 2, 1).view(n,c,7,7)
+            #image_feat = rearrange(image_feat, 'n b d -> n h e d',h=7,e=7) # ViT-L/14
         elif self.model_name == 'dinov1':
             pass # Already in shape (1, c, nph, npw)
         elif self.model_name == 'denseclip':
@@ -118,7 +121,6 @@ def resize_outputs_to_image_size(outputs: torch.Tensor, images: List[torch.Tenso
 def get_model_outputs(feats_l, labels_l, model):
     feats_l = [f.to(args.device) for f in feats_l]
     labels_l = [l.to(args.device) for l in labels_l]
-
     outputs = model(feats_l) # (n, h, w, n_classes)
     image_preds_l = resize_outputs_to_image_size(outputs, labels_l)
 
@@ -229,7 +231,7 @@ def eval_acc(args, model: torch.nn.Module):
         loss, preds, labels = compute_loss(image_preds_l, labels_l, criterion)
 
         # Reshape outputs and labels for loss calculation
-        mca(preds, labels)
+        mca(preds.cpu() labels.cpu())
         total_loss += loss.item()
 
     val_loss = total_loss / len(args.val_ds) # Average loss per image
@@ -554,8 +556,8 @@ if __name__ == '__main__':
         import wandb
         wandb.init(project='dino_sam_patch_pred', config=args)
 
-    args.val_ds = SegmentationDataset(args.val_img_feature_dir, args.val_seg_label_dir)
+    args.val_ds = SegmentationDataset(args.val_img_feature_dir, args.val_seg_label_dir,model_name=args.backbone_model)
     if not args.eval_only:
-        args.train_ds = SegmentationDataset(args.train_img_feature_dir, args.train_seg_label_dir, limit_files_to_frac=args.limit_files_to_frac)
+        args.train_ds = SegmentationDataset(args.train_img_feature_dir, args.train_seg_label_dir, limit_files_to_frac=args.limit_files_to_frac,model_name=args.backbone_model)
 
     train_and_evaluate(args)
