@@ -265,6 +265,8 @@ def compute_iou(args, predictions, file_names, epoch):
     logger.info('Computing IoU')
     actual_labels = []
     for file in tqdm(file_names):
+        if args.ade:
+            file = file.replace('.jpg','.png')
         actual = np.array(Image.open(os.path.join(args.val_seg_label_dir, file)))
         actual_labels.append(actual)
 
