@@ -105,7 +105,7 @@ if __name__ == '__main__':
     device = 'cpu'
 
     os.makedirs(sam_output_dir, exist_ok=True)
-    for mask_basename in tqdm(sorted(os.listdir(sam_dir))[11:12]):
+    for mask_basename in tqdm(sorted(os.listdir(sam_dir))[8:9]):
         mask_path = os.path.join(sam_dir, mask_basename) # JSON
         slic_path = os.path.join(slic_dir, os.path.splitext(mask_basename)[0] + '.pkl')
 
@@ -206,7 +206,7 @@ if __name__ == '__main__':
     show(pca_img)
 
     # %% Overlay the PCA image on top of the SLIC and SAM Sooth Split Image translucently
-    pca_img_weight = .7
+    pca_img_weight = .5
     blended = pca_img * pca_img_weight + slic_and_sam_smooth_split_img * (1 - pca_img_weight)
     blended = blended.to(torch.uint8)
     show(blended)
