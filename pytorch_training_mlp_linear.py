@@ -170,13 +170,8 @@ def train_model(args):
     else:
         model = torchvision.ops.MLP(in_channels=args.input_channels,hidden_channels=[args.hidden_channels,args.num_classes+1])
 
-<<<<<<< Updated upstream
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer,T_max=args.epochs)
-=======
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
-    #scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer,T_max=args.epochs)
->>>>>>> Stashed changes
     if args.ade:
         criterion = nn.CrossEntropyLoss(reduction='none',ignore_index=0)
     else:
@@ -233,12 +228,7 @@ def train_model(args):
         print(f"Train_acc:{train_acc}")
         metrics = {'val_loss':val_loss,'val_acc':val_acc,'train_acc':train_acc,'train_loss':loss.item()}
         utils.save_file(os.path.join(args.results_dir,f'metrics_epoch_{epoch}.json'),metrics,json_numpy=True)
-<<<<<<< Updated upstream
-
-        scheduler.step()
-=======
         #scheduler.step()
->>>>>>> Stashed changes
 
         if args.log_to_wandb:
             metrics.update({
