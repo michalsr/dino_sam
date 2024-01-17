@@ -4,83 +4,101 @@ import numpy as np
 from tqdm import tqdm
 from pycocotools import mask as mask_utils
 import torch
+from PIL import Image 
 import torchvision.transforms as T
 import math
 import os
 import argparse
 import utils
 import torch.nn.functional as F
+import cv2 
+import extract_features as image_features
 import logging
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
 """
-Given extracted regions from SAM and image features, create feature vectors for each region using some method (eg. avg)
+Given extracted regions from SAM, extract image features (if not done already), create feature vectors for each region using some method (eg. avg)
 """
 
-def region_features_vaw(args):
-    #
-    # vaw might not use sam masks
-    #almost identical to region_features except no rle decoding
-    image_id_to_mask = {}
-    for f in tqdm(os.listdir(args.mask_dir)):
-        # listed by instanes not regions
-        filename_extension = os.path.splitext(f)[1]
-        try:
-            regions = utils.open_file(os.path.join(args.mask_dir,f))
-        except:
-            logger.info(f)
+def extract_image_features(args,image_name):
+    try:
+        cv = cv2.imread(os.path.join(args.image_dir, image_name)+args.image_ext)
+        color_coverted = cv2.cvtColor(cv, cv2.COLOR_BGR2RGB) 
+        image = Image.fromarray(color_coverted)
 
-        image_id = regions['image_id'].replace(filename_extension,'')
-        if image_id not in image_id_to_mask:
-            image_id_to_mask[image_id] = []
-        if isinstance(regions['mask'],np.ndarray):
-            image_id_to_mask[image_id].append(regions)
+    except:
+        print(f'Could not read image {image_name}')
 
-    all_feature_files = [f for f in os.listdir(args.feature_dir) if os.path.isfile(os.path.join(args.feature_dir, f))]
-    for i,image_id in enumerate(tqdm(image_id_to_mask)):
-    #for i,f in enumerate(tqdm(all_feature_files,desc='Region features',total=len(all_feature_files))):
-        features = utils.open_file(os.path.join(args.feature_dir,image_id+'.pkl'))
-        # file_name =f
-        # ext = os.path.splitext(f)[1]
-        all_region_features_in_image = []
-        regions = image_id_to_mask[image_id]
-        if len(regions) == 0:
-            continue
-        new_h, new_w = regions[0]['mask'].shape
-        patch_length = args.dino_patch_length
-        padded_h, padded_w = math.ceil(new_h / patch_length) * patch_length, math.ceil(new_w / patch_length) * patch_length # Get the padded height and width
-        upsample_feature = torch.nn.functional.upsample(torch.from_numpy(features).cuda(),size=[padded_h,padded_w],mode='bilinear') # First interpolate to the padded size
-        upsample_feature = T.CenterCrop((new_h, new_w)) (upsample_feature).squeeze(dim = 0) # Apply center cropping to the original size
-        f,h,w = upsample_feature.size()
-        for region in regions:
-                if 'mask' in list(region.keys()):
-                    # save instances
-                    region_feature = {}
-                    region_feature['instance_id'] = region['instance_id']
-                    if not os.path.exists(os.path.join(args.region_feature_dir,str(region['instance_id'])+'.pkl')):
-                        r_1, r_2 = np.where(region['mask'] == 1)
-                        features_in_mask = upsample_feature[:,r_1,r_2].view(f,-1).mean(1).cpu().numpy()
-                        region_feature['region_feature'] = features_in_mask
-                        utils.save_file(os.path.join(args.region_feature_dir,str(region['instance_id'])+'.pkl'),region_feature)
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    args.device = device  
+    if args.dtype == "fp16":
+      args.dtype = torch.half
+    elif args.dtype == "fp32":
+      args.dtype = torch.float ## this change is needed for CLIP model
+    else: 
+      args.dtype = torch.bfloat16
 
+    if args.model == 'clip':
+        model, preprocess = clip.load(args.clip_model, device=device)
+    elif args.model == 'dense_clip':
+        model = DenseCLIP('ViT-L/14@336px').to(device)
+    elif args.model == 'imagenet':
+        model = timm.create_model('vit_large_patch32_224.orig_in21k', pretrained=True, dynamic_img_size = True)
+    else:
+        model = torch.hub.load(f'{args.model_repo_name}', f'{args.model}')
 
+    model = model.to(device=args.device, dtype=args.dtype)
+    try:  
+        if 'dino' in args.model:
+            if 'dinov2' in args.model:
+                features = image_features.extract_dino_v2(args, model, image)
+            else:  # dinov1
+                features = image_features.extract_dino_v1(args, model, image)
+
+        elif args.model == 'clip':
+            features = image_features.extract_clip(args, model, image, preprocess)
+        
+        elif args.model == 'dense_clip':
+            features = image_features.extract_dense_clip(args, model, image)
+        
+        elif args.model == 'imagenet':
+            features = image_features.extract_imagenet(args, model, image)
+    except torch.cuda.OutOfMemoryError as e:
+            logger.warning(f'Caught CUDA out of memory error for {f}; falling back to CPU')
+            torch.cuda.empty_cache()
+            features = None 
+    return features 
+
+    
 
 def region_features(args,image_id_to_sam):
-    # Get the intersection of the feature files and the sam regions
-    all_feature_files = [f for f in os.listdir(args.feature_dir) if os.path.isfile(os.path.join(args.feature_dir, f))]
-    feature_files_in_sam = [f for f in all_feature_files if os.path.splitext(f)[0] in image_id_to_sam]
+    if args.feature_dir!= None:
+        features_exist = True 
+        # Get the intersection of the feature files and the sam regions
+        all_feature_files = [f for f in os.listdir(args.feature_dir) if os.path.isfile(os.path.join(args.feature_dir, f))]
+        feature_files_in_sam = [f for f in all_feature_files if os.path.splitext(f)[0] in image_id_to_sam]
 
-    features_minus_sam = set(all_feature_files) - set(feature_files_in_sam)
-    if len(features_minus_sam) > 0:
-        logger.warning(f'Found {len(features_minus_sam)} feature files that are not in the set of SAM region files: {features_minus_sam}')
-    
-    prog_bar = tqdm(feature_files_in_sam)
+        features_minus_sam = set(all_feature_files) - set(feature_files_in_sam)
+        if len(features_minus_sam) > 0:
+            logger.warning(f'Found {len(features_minus_sam)} feature files that are not in the set of SAM region files: {features_minus_sam}')
+    else:
+        features_exist = False 
+        logger.warning('No feature directory. Will extract features while processing features')
+    if features_exist:
+        prog_bar = tqdm(feature_files_in_sam)
 
-    def extract_features(f, device='cuda'):
+    else:
+        prog_bar = tqdm(image_id_to_sam)
+
+    def extract_features(f, args,device='cuda',features_exist=True):
         prog_bar.set_description(f'Region features: {f}')
-        features = utils.open_file(os.path.join(args.feature_dir,f))
+        if features_exist:
+            features = utils.open_file(os.path.join(args.feature_dir,f))
+        else:
+            # need to extract extract image features 
+            features = extract_image_features(args,f)
         file_name = f
         ext = os.path.splitext(f)[1]
         all_region_features_in_image = []
@@ -134,12 +152,15 @@ def region_features(args,image_id_to_sam):
 
     for i,f in enumerate(prog_bar):
         try:
-            extract_features(f)
+            extract_features(f,args,features_exist=features_exist)
 
         except torch.cuda.OutOfMemoryError as e:
             logger.warning(f'Caught CUDA out of memory error for {f}; falling back to CPU')
             torch.cuda.empty_cache()
-            extract_features(f, device='cpu')
+            extract_features(f,args,features_exist=features_exist, device='cpu')
+        # except Exception as e:
+        #     print(f'Error: {e}')
+        #     continue 
 
 def load_all_regions(args):
     if len(os.listdir(args.mask_dir)) == 0:
@@ -202,15 +223,77 @@ if __name__ == '__main__':
         help='pooling methods'
     )
 
-    args = parser.parse_args()
+    # extract feature arguments 
+    parser.add_argument(
+        "--image_dir",
+        type=str,
+        default=None,
+        help='Image dir for extracting features'
+    )
+    parser.add_argument(
+        "--dtype",
+        type=str,
+        default='bf16',
+        choices=['fp16', 'fp32','bf16'],
+        help="Which mixed precision to use. Use fp32 for clip and dense_clip"
+    )
+    parser.add_argument(
+        "--model_repo_name",
+        type=str,
+        default="facebookresearch/dinov2",
+        choices=['facebookresearch/dinov2','facebookresearch/dino:main'],
+        help="PyTorch model name for downloading from PyTorch hub"
+    )
 
-    if not args.use_sam:
-        logger.info('Using instance masks')
-        region_features_vaw(args)
-    else:
-        logger.info('Using SAM masks')
-        image_id_to_mask = load_all_regions(args)
-        region_features(args,image_id_to_mask)
+    parser.add_argument(
+        "--clip_model",
+        type=str,
+        default="ViT-B/32",
+        choices=["ViT-B/32", "ViT-B/16", "ViT-L/14", "RN50", "RN101", "RN50x4", "RN50x16", "RN50x64", "ViT-L/14@336px"],
+        help="CLIP base model version"
+    )
+
+    parser.add_argument(
+        "--model",
+        type=str,
+        default='dinov2_vitl14',
+        choices=['dinov2_vitl14', 'dino_vitb8', 'dinov2_vits14', 'dinov2_vitb14', 'dinov2_vitg14', 'clip','dino_vitb16','dense_clip', 'imagenet'],  
+        help="Name of model from repo"
+    )
+
+    parser.add_argument(
+        "--layers",
+        type=str,
+        default="[23]",
+        help="List of layers or number of last layers to take"
+    )
+    parser.add_argument(
+        "--padding",
+        default="center",
+        help="Padding used for transforms"
+    )
+    parser.add_argument(
+        "--image_ext",
+        default=".jpg",
+        help="Image extension for reading from dir"
+    )
+    parser.add_argument(
+        "--multiple",
+        type=int,
+        default=14,
+        help="The patch length of the model. Use 14 for DINOv2, 8 for DINOv1, 32 for CLIP, 14 for DenseCLIP (automatically handled in the package)"
+    )
+
+    args = parser.parse_args([
+        '--mask_dir','/data/michal5/clevr/train',
+        '--region_feature_dir','/data/michal5/clevr/train_region_features',
+        '--image_dir', '/data/michal5/clevr/images/train',
+        '--image_ext', '.png'
+    ])
+
+
+    image_id_to_mask = load_all_regions(args)
+    region_features(args,image_id_to_mask)
 
     logger.info('Done')
 
