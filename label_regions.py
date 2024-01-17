@@ -17,8 +17,9 @@ def load_all_sam_regions(args):
     print(f"Loading sam regions from {args.sam_dir}")
     image_id_to_sam = {}
     for f in tqdm(os.listdir(args.sam_dir)):
-        sam_regions = utils.open_file(os.path.join(args.sam_dir,f))
-        image_id_to_sam[f.replace('.json','')] = sam_regions
+        if '.json' not in f:
+            sam_regions = utils.open_file(os.path.join(args.sam_dir,f))
+            image_id_to_sam[f.replace('.json','')] = sam_regions
     return image_id_to_sam
 
 
@@ -71,28 +72,43 @@ def label_all_regions(args):
     if len(os.listdir(args.sam_dir)) == 0:
         raise Exception(f"No sam regions found at {args.sam_dir}")
     image_id_to_sam = load_all_sam_regions(args)
-    all_annotations = os.listdir(args.annotation_dir)
+    if args.gt_regions:
+        # each region already has a label
+        for image_id,entry in tqdm(image_id_to_sam.items()):
+            region_to_label = []
+            for region in entry:
+                gt_labels = {}
+                # gt_labels['region_id'] = region['id']
+                #gt_mask = mask_utils.decode(region['segmentation'])
+                gt_mask = region['segmentation']
+                labels = {str(region['label']):1}
+                gt_labels['labels'] = labels
+                region_to_label.append(gt_labels)
+            utils.save_file(os.path.join(args.region_labels,image_id),region_to_label)
+    else:
+        all_annotations = os.listdir(args.annotation_dir)
 
-    annotations_minus_sam = {ann for ann in all_annotations if ann.replace('.png', '') not in image_id_to_sam}
+        annotations_minus_sam = {ann for ann in all_annotations if ann.replace('.png', '') not in image_id_to_sam}
 
-    if len(annotations_minus_sam) > 0:
-        print(f"Warning: {len(annotations_minus_sam)} annotations not found in SAM regions : {annotations_minus_sam}")
-        print("Restricting annotations to those with corresponding SAM regions")
-        all_annotations = [ann for ann in all_annotations if ann not in annotations_minus_sam]
+        if len(annotations_minus_sam) > 0:
+            print(f"Warning: {len(annotations_minus_sam)} annotations not found in SAM regions : {annotations_minus_sam}")
+            print("Restricting annotations to those with corresponding SAM regions")
+            all_annotations = [ann for ann in all_annotations if ann not in annotations_minus_sam]
+    
 
-    for i,ann in enumerate(tqdm(all_annotations,desc='Label Features',total=len(all_annotations))):
-        region_to_label = []
-        annotation_map =np.array(Image.open(os.path.join(args.annotation_dir,ann)),dtype=np.int64)
+        for i,ann in enumerate(tqdm(all_annotations,desc='Label Features',total=len(all_annotations))):
+            region_to_label = []
+            annotation_map =np.array(Image.open(os.path.join(args.annotation_dir,ann)),dtype=np.int64)
 
-        sam_regions = image_id_to_sam[ann.replace('.png','')]
-        for region in sam_regions:
-            sam_labels = {}
-            sam_labels['region_id'] = region['region_id']
-            sam_mask = mask_utils.decode(region['segmentation'])
-            labels = label_region(args,sam_mask,annotation_map)
-            sam_labels['labels'] = labels
-            region_to_label.append(sam_labels)
-        utils.save_file(os.path.join(args.region_labels,ann.replace('.png','.pkl')),region_to_label)
+            sam_regions = image_id_to_sam[ann.replace('.png','')]
+            for region in sam_regions:
+                sam_labels = {}
+                sam_labels['region_id'] = region['region_id']
+                sam_mask = mask_utils.decode(region['segmentation'])
+                labels = label_region(args,sam_mask,annotation_map)
+                sam_labels['labels'] = labels
+                region_to_label.append(sam_labels)
+            utils.save_file(os.path.join(args.region_labels,ann.replace('.png','.pkl')),region_to_label)
 
 
 
@@ -152,7 +168,11 @@ if __name__ == '__main__':
         type=str,
         default=None,
         help="Image dir for vaw if needed for saving masks")
-
+    parser.add_argument(
+        "--gt_regions",
+        action='store_true',
+        help='If using non-SAM regions'
+    )
     args = parser.parse_args()
     if args.num_classes != 151 and args.num_classes!= 21:
         raise ValueError('ADE should have 151 and Pascal VOC should have 21')

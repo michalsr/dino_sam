@@ -125,7 +125,12 @@ def get_sam_regions(args):
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
         start_time = time()
-        masks = generator.generate(image)
+        try:
+            masks = generator.generate(image)
+        except torch.cuda.OutOfMemoryError as e:
+            print('Cuda out of memory error')
+            torch.cuda.empty_cache()
+            continue 
         end_time = time()
 
         gen_times.append(end_time - start_time)
