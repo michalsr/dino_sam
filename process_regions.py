@@ -284,12 +284,7 @@ if __name__ == '__main__':
         help="The patch length of the model. Use 14 for DINOv2, 8 for DINOv1, 32 for CLIP, 14 for DenseCLIP (automatically handled in the package)"
     )
 
-    args = parser.parse_args([
-        '--mask_dir','/data/michal5/clevr/train',
-        '--region_feature_dir','/data/michal5/clevr/train_region_features',
-        '--image_dir', '/data/michal5/clevr/images/train',
-        '--image_ext', '.png'
-    ])
+    args = parser.parse_args()
 
 
     image_id_to_mask = load_all_regions(args)
